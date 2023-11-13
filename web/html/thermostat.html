@@ -75,55 +75,56 @@
 				<tr>
 					<td valign="top">
 						<br>
-						<p><b><span style="font-size:large">Temp: @@current@@</span></b></p>
+						<p><b><span style="font-size:large">Warmwasser: @@domesticwater@@</span></b></p>
+						<p><b><span style="font-size:large">Temperatur: @@current@@</span></b></p>
 						<p>@@status@@</p>
 						<br>
 						<br>
-						<p><input type="submit" value="Edit Schedule" onclick="window.location = 'schedule'; return false;" /></p>
+						<p><input type="submit" value="Einstellungen vornehmen"></p>
+						<p><input type="submit" value="Zeitplan bearbeiten" onclick="window.location = 'schedule'; return false;" /></p>
 					</td>
 					<td align="center">
 						 <table width="100%">
 							<tr>
 								<td align="center" valign="center" width="33%">
-									<label for="heatButton" related="coolButton" class="red">Heat</label>
+									<label for="heatButton" related="coolButton" class="red">Heizen</label>
 									<input type="checkbox" id="heatButton" related="coolButton" name="heat" value="on" @@heatChecked@@/>
 								</td>
 								<td rowspan="3" align="center" width="33%">
 									<div id="slider-vertical" style="height:200px;"></div>
 								</td>
 								<td align="center" valign="center" width="33%">
-									<label for="holdButton" class="green">Hold</label>
+									<label for="holdButton" class="green">Halten</label>
 									<input type="checkbox" id="holdButton" name="hold" value="on" @@holdChecked@@/>
 								</td>
 							</tr>
 							<tr>
 								<td align="center" valign="center" width="33%">
-									<label for="coolButton" related="heatButton" class="blue">Cool</label>
+									<label for="coolButton" related="heatButton" class="blue">Kühlen</label>
 									<input type="checkbox" id="coolButton" related="heatButton" name="cool" value="on" @@coolChecked@@/>
 								</td>	
 								<td rowspan="2" align="center" valign="top" width="33%">
 									<br>
 									<input type="text" id="temp" name="temp" readonly style="border:0; color:#ff0000; font-weight:bold; font-size:x-large; width: 2.3em;" size="4">
-								</td>						
+								</td>
 							</tr>
 							<tr>
 								<td align="center" valign="center" width="33%">
-									<label for="fanButton" class="green" >Fan</label>
+									<label for="fanButton" class="green" >Pumpe</label>
 									<input type="checkbox" id="fanButton" name="fan" value="on" @@fanChecked@@/>
-								</td>							
+								</td>
 							</tr>
-							<tr>	
-								<td>						
+							<tr>
+								<td>
 								<td align="center">
 									<br>
-									<input type="submit" value="Set">
 								</td>
-								<td/>	
+								<td/>
 							</tr>
 						  </table>
 					</td>
-				</tr>			
-		  	</table>	  
+				</tr>
+		  	</table>
 		</form>
 	</div>
 </body>
