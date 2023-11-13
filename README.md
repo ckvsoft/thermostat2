@@ -1,4 +1,4 @@
-# Raspberry Pi Thermostat Implementation
+# Raspberry Pi Thermostat Implementation Version 2
 
 Author: 	Andrzej Taramina
 Email:		andrzej at chaeron dot com
@@ -62,33 +62,25 @@ The new Pi thermostat in it's custom wood enclosure. mounted on the wall in the 
 
 ##Hardware (as used/tested by author):
 
-	- Raspberry Pi 2 Model B
-	- Official Raspberry Pi Foundation 7" Touch Sensitive LCD screen
-	- CanaKit WiFi Adapter 150 Mbps
-	- Prototyping shield/board
-	- Makeatronics 24V AC SSR Board relay board(s) to interface to furnace/AC (from http://makeatronics.blogspot.com/p/store.html, fully assembled)
-	- PowerBoost 1000 Charger (from Adafruit)
-	- Lithium Ion Polymer Battery - 3.7v 2500mAh (from Adafruit)
+	- Raspberry Pi 4 Model B
+	- Waveshare 7" DSI or Official Raspberry Pi Foundation 7" Touch Sensitive LCD screen
 	- DS18B20 Weatherproof temperature sensor
-	- Pimoroni Raspberry Pi 7" Touchscreen Display Case (optional, from Adafruit)
 	- Adafruit PIR sensor (optional, https://www.adafruit.com/products/189)
-	- Custom built wooden thermostat enclosure
-
 
 ##Software Requirements (as used/tested by author):
 
 	- Latest Raspbian OS
-	- Python 2.7
-	- Kivy (Ver 1.9.1 dev) UI framework
+	- Python 3.11.2
+	- Kivy (Ver 2.1.0) UI framework
 	- Additional required python packages:
 	    - w1thermsensor
+	    - Fake w1thermsensor (for testing on non-Pi platforms, version included)
 	    - FakeGPIO (for testing on non-Pi platforms, customized version included)
 	    - CherryPy (web server)
 	    - schedule (for scheduled events)
 	    - openweathermap.org app key 
-	    - Optional: MQTT client library (paho-mqtt, for remote logging and sensor support) 
+	    - MQTT client library (paho-mqtt, for remote logging and sensor support) 
 		
-
 ##Software installation:
 
 	1. Make sure you have the latest Raspbian updates
