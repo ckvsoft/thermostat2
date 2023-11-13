@@ -1,5 +1,11 @@
 # Raspberry Pi Thermostat Implementation Version 2
 
+Author: 	Christian Kvasny
+Email:		info at ckvsoft dot at
+License:	MIT
+
+-----------------------------------------------------------------------------------------------------------------------------------------
+Original Author Version 1
 Author: 	Andrzej Taramina
 Email:		andrzej at chaeron dot com
 License:	MIT
