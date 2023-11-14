@@ -1,7 +1,7 @@
 *~
 *.gz
 *.log
-thermostat_settings.json
+*.json
 __*
 venv
 .idea
