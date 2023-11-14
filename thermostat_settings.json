@@ -50,8 +50,7 @@
         "name": "DaikinWZ"
     },
     "weather": {
-        "appkey": "9b444a2d4b7a5d2da2c966b37bcef619",
-        "appkey_my": "47222a35a0fd212f165887433491e2a4",
+        "appkey": "your appkey",
         "forecastRefreshInterval": 60,
         "location": "7873070",
         "weatherExceptionInterval": 5,
