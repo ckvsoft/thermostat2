@@ -3,6 +3,7 @@
 *.log
 *.json
 __*
+venv
 .idea
 archive
 backup
