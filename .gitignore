@@ -1,7 +1,8 @@
 *~
 *.gz
 *.log
+*.json
+__*
+.idea
 archive
 backup
-
-

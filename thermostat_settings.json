@@ -1,6 +1,6 @@
 {
     "i18n": {
-        "locale": "de_AT.utf8"
+        "locale": "de_DE.utf8"
     },
     "calibration": {
         "boilingMeasured": 99.098043,
@@ -50,7 +50,8 @@
         "name": "DaikinWZ"
     },
     "weather": {
-        "appkey": "your openweathermap.org appkey",
+        "appkey": "9b444a2d4b7a5d2da2c966b37bcef619",
+        "appkey_my": "47222a35a0fd212f165887433491e2a4",
         "forecastRefreshInterval": 60,
         "location": "7873070",
         "weatherExceptionInterval": 5,
@@ -59,6 +60,6 @@
     },
     "web": {
         "host": "0.0.0.0",
-        "port": 80
+        "port": 11080
     }
 }
