@@ -1,8 +1,29 @@
 {
+    "i18n": {
+        "locale": "de_DE.utf8"
+    },
     "calibration": {
         "boilingMeasured": 99.098043,
         "elevation": 269,
         "freezingMeasured": 0.01
+    },
+    "logging": {
+        "channel": "file",
+        "level": "info"
+    },
+    "mqtt": {
+        "clientID": "Thermostat1",
+        "enabled": 1,
+        "port": 1883,
+        "pubPrefix": "thermostat",
+        "server": "10.1.1.109"
+    },
+    "pir": {
+        "pirCheckInterval": 0.5,
+        "pirEnabled": 1,
+        "pirIgnoreFrom": "00:00",
+        "pirIgnoreTo": "00:00",
+        "pirPin": 5
     },
     "scale": {
         "tempScale": "metric"
@@ -19,34 +40,25 @@
         "tempHysteresis": 0.5,
         "tempStep": 0.5
     },
-    "pir": {
-        "pirEnabled": 1,
-        "pirPin": 5,
-        "pirCheckInterval": 0.5,
-        "pirIgnoreFrom": "00:00",
-        "pirIgnoreTo": "00:00"
-	},
+    "domestic_water": {
+        "enabled": 1,
+        "topic": "Heizung/Cmd",
+        "key_value_pair": "warmwasser_top"
+    },
+    "faikin": {
+        "enabled": 1,
+        "name": "DaikinWZ"
+    },
     "weather": {
-        "appkey": "your openweathermap.org appkey",
+        "appkey": "your_api_key",
         "forecastRefreshInterval": 60,
-        "location": "Barrie,ca",
+        "location": "7873070",
         "weatherExceptionInterval": 5,
         "weatherRefreshInterval": 10,
-		"URLtimeout": 5
+        "URLtimeout": 5
     },
     "web": {
-        "host": "discover",
+        "host": "0.0.0.0",
         "port": 80
-    },
-	"mqtt": {
-		"enabled": 0,
-		"clientID": "thermostat",
-		"server": "localhost",
-		"port": 1883,
-		"pubPrefix": "mymqtt"
-	},
-	"logging": {
-		"channel": "file",
-		"level": "state"
-	}
+    }
 }
