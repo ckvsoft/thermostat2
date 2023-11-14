@@ -573,11 +573,10 @@ def get_status_info():
         status_info = {
             'heat': f"[color=00ff00][b]" + _("On") + "[/b][/color]" if not GPIO.input(heatPin) else f"" + _("Off"),
             'cool': f"[color=00ff00][b]" + _("On") + "[/b][/color]" if not GPIO.input(coolPin) else f"" + _("Off"),
-            'fan': f"[color=00ff00][b]" + _("On") + "[/b][/color]" if GPIO.input(fanPin) else f"" + _("Off"),
+            'fan': f"[color=00ff00][b]" + _("On") + "[/b][/color]" if GPIO.input(fanPin) else f"" + _("Auto"),
             'sched': sched
         }
 
-        # Konvertieren Sie das Dictionary in einen JSON-String
         status_info_json = json.dumps(status_info)
 
         return status_info_json
@@ -587,9 +586,9 @@ currentLabel = Label(text="[b]" + str(currentTemp) + scaleUnits + "[/b]", size_h
 currentWaterLabel = Label(text="[b]" + _("Domestic water") + "[/b]:", size_hint=(None, None), font_size='25sp', markup=True, text_size=(200, 100))
 currentWaterValueLabel = Label(text=str(domesticwater) + scaleUnits, size_hint=(None, None), font_size='25sp', markup=True, text_size=(100, 100))
 
-altCurLabel = Label(text=currentLabel.text, size_hint=(None, None), font_size='100sp', markup=True, text_size=(300, 200), color=(0.4, 0.4, 0.4, 0.2))
-altWaterLabel = Label(text=currentWaterLabel.text, size_hint=(None, None), font_size='50sp', markup=True, text_size=(500, 200), color=(0.4, 0.4, 0.4, 0.2))
-altWaterValueLabel = Label(text=currentWaterValueLabel.text, size_hint=(None, None), font_size='50sp', markup=True, text_size=(500, 200), color=(0.4, 0.4, 0.4, 0.2))
+altCurLabel = Label(text=currentLabel.text, size_hint=(None, None), font_size='100sp', markup=True, text_size=(300, 200), color=(0.5, 0.5, 0.5, 0.2))
+altWaterLabel = Label(text=currentWaterLabel.text, size_hint=(None, None), font_size='50sp', markup=True, text_size=(500, 200), color=(0.5, 0.5, 0.5, 0.2))
+altWaterValueLabel = Label(text=currentWaterValueLabel.text, size_hint=(None, None), font_size='50sp', markup=True, text_size=(500, 200), color=(0.5, 0.5, 0.5, 0.2))
 
 setLabel = Label(text="  Set\n[b]" + str(setTemp) + scaleUnits + "[/b]", size_hint=(None, None), font_size='25sp', markup=True, text_size=(100, 100))
 
@@ -1022,8 +1021,6 @@ def show_minimal_ui(dt):
     with thermostatLock:
         screenMgr.current = "minimalUI"
         log(LOG_LEVEL_DEBUG, CHILD_DEVICE_SCREEN, MSG_SUBTYPE_TEXT, "Minimal")
-        # screen_off()
-
 
 class MinimalScreen(Screen):
     def on_touch_down(self, touch):
@@ -1359,10 +1356,10 @@ class ThermostatApp(App):
                 Color(0.0, 0.0, 0.0, 1)
                 self.rect = Rectangle(size=(800, 480), pos=minUI.pos)
 
-            altCurLabel.pos = (390, 290)
-            altWaterLabel.pos = (350, 200)
-            altWaterLabel.pos = (350, 400)
-            altTimeLabel.pos = (335, 380)
+            altCurLabel.pos = (380, 290)
+            altWaterLabel.pos = (340, 200)
+            altWaterValueLabel.pos = (660, 200)
+            altTimeLabel.pos = (400, 380)
 
             minUI.add_widget(altCurLabel)
             minUI.add_widget(altWaterLabel)
@@ -1384,7 +1381,6 @@ class ThermostatApp(App):
 
         # Start checking the temperature
         Clock.schedule_interval(check_sensor_temp, tempCheckInterval)
-        #       Clock.schedule_interval( check_hotwater_temp, tempCheckInterval )
 
         # Show the current weather & forecast
         Clock.schedule_once(display_current_weather, 5)
