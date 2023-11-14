@@ -1,0 +1,108 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2023-11-14 22:07+0100\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=CHARSET\n"
+"Content-Transfer-Encoding: 8bit\n"
+
+#: thermostat.py:509 thermostat.py:532 thermostat.py:571 thermostat.py:599
+#: thermostat.py:1504
+msgid "Cool"
+msgstr ""
+
+#: thermostat.py:510 thermostat.py:539 thermostat.py:569 thermostat.py:598
+#: thermostat.py:1503
+msgid "Heat"
+msgstr ""
+
+#: thermostat.py:511 thermostat.py:546 thermostat.py:600 thermostat.py:1505
+msgid "Fan"
+msgstr ""
+
+#: thermostat.py:512 thermostat.py:553 thermostat.py:565 thermostat.py:1507
+msgid "Hold"
+msgstr ""
+
+#: thermostat.py:574 thermostat.py:575 thermostat.py:576
+msgid "On"
+msgstr ""
+
+#: thermostat.py:574 thermostat.py:575 thermostat.py:576
+msgid "Off"
+msgstr ""
+
+#: thermostat.py:587
+msgid "Domestic water"
+msgstr ""
+
+#: thermostat.py:601 thermostat.py:1506
+msgid "Sched"
+msgstr ""
+
+#: thermostat.py:686
+msgid "Temp"
+msgstr ""
+
+#: thermostat.py:688 thermostat.py:701 thermostat.py:714
+msgid "Humidity"
+msgstr ""
+
+#: thermostat.py:690 thermostat.py:703 thermostat.py:716
+msgid "Wind"
+msgstr ""
+
+#: thermostat.py:692 thermostat.py:705 thermostat.py:718
+msgid "Clouds"
+msgstr ""
+
+#: thermostat.py:694
+msgid "Sun"
+msgstr ""
+
+#: thermostat.py:699 thermostat.py:712
+msgid "High"
+msgstr ""
+
+#: thermostat.py:786
+msgid "Low"
+msgstr ""
+
+#: thermostat.py:794 thermostat.py:814
+msgid "Rain"
+msgstr ""
+
+#: thermostat.py:797 thermostat.py:799 thermostat.py:817 thermostat.py:819
+msgid "Snow"
+msgstr ""
+
+#: thermostat.py:1252
+msgid "Today"
+msgstr ""
+
+#: thermostat.py:1268
+msgid "Tomorow"
+msgstr ""
+
+#: thermostat.py:1493
+msgid "Temperature"
+msgstr ""
+
+#: thermostat.py:1508
+msgid "Apply settings"
+msgstr ""
+
+#: thermostat.py:1509
+msgid "Edit schedule"
+msgstr ""

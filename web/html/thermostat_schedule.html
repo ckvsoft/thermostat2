@@ -15,9 +15,8 @@
   <script src="/javascript/jquery-ui.min.js"></script>
   <script src="/javascript/thermostat_schedule.js"></script>
   <script src="/javascript/jquery.ui.touch-punch.min.js"></script>
-  
- <script>
 
+ <script>
   $(function() {
 	// turn this on for debugging on IOS devices
 
@@ -46,7 +45,7 @@
 
 		  for( i = 0; i < days.length; i++ ) {
 			var day = days[ i ].toLowerCase();
-			
+
 			var canvas = $('<canvas>').attr({
 							id: schedule + "-" + day,
 							width: 500,
@@ -56,14 +55,14 @@
 			$('<br>').appendTo( "#" + schedule );
 
 			var ss = new ScheduleSlider( schedule, days[ i ], canvas, "pointer", "pointer-selected", scheduleSliders );
-			
+
 			scheduleSliders.push( ss );
-		
+
 			var entries = data[ schedule ][ day ]
 
 			for( j = 0; j < entries.length; j++ ) {
 				var entry = entries[ j ];
-				ss.addScheduleEntry( new ScheduleEntry( entry[ 0 ], entry[ 1 ], ss ) ); 
+				ss.addScheduleEntry( new ScheduleEntry( entry[ 0 ], entry[ 1 ], ss ) );
 			}
 		  }
 	  }
@@ -113,17 +112,16 @@
 		  	sched_json[ ss.schedule ][ ss.day.toLowerCase() ].push( [ ss.entries[ i ].hhmm, ss.entries[ i ].temp ] );
 		  }
 	    }
-		 
+
 		$.ajax( "save", {
 			data: JSON.stringify( sched_json, null, 4  ),
 			contentType: 'application/json',
 			async: false,
-			type : 'POST', 
+			type : 'POST',
 			success: function( html ) {
 				window.document.write( html );
-			}		
+			}
 		});
-
 	};
 
 	deleteSelected = function() {
@@ -144,6 +142,8 @@
 	  width: 100%;
 	  min-height: 100%;
 	  min-width: 100%;
+	  background-color: #1a1a1a;
+	  color: #ffffff;
 	}
 
 	.pointer {
@@ -156,16 +156,26 @@
 
 	canvas {
 		border: 1px solid #DDDDDD;
+		background-color: #333333;
 	}
 
 	#cool {
 		display: none;
 	}
 
-    @media screen and (-webkit-min-device-pixel-ratio: 0) {
+	select, textarea, input {
+		background-color: #333333;
+		color: #ffffff;
+	}
+
+	select:focus, textarea:focus, input:focus {
+		font-size: 16px;
+	}
+
+	@media screen and (-webkit-min-device-pixel-ratio: 0) {
 		select:focus, textarea:focus, input:focus {
-				font-size: 16px;
-			}
+			font-size: 16px;
+		}
 	}
   </style>
 </head>
@@ -181,7 +191,7 @@
 					<td width="25%" align="right"><select id="schedule-select"></select></td>
 				</tr>
 		</table>
-	   
+
 	   <div id="heat"></div>
 	   <div id="cool"></div>
 
@@ -195,11 +205,11 @@
 				Time: <input type="text" id="time" name="time" readonly style="border:0; color:#ff0000; font-weight:bold; width: 3em;" size="5">
 				Temp: <input type="text" id="temp" name="temp" readonly style="border:0; color:#ff0000; font-weight:bold; width: 2.3em;" size="4">
 		   </div>
-		   <br>	
+		   <br>
 		   <div align="center">
 		   		<input type="submit" value="Delete Selected Entry" onclick="deleteSelected();" />
 		   </div>
-		   <br>	
+		   <br>
 	   </div>
 
 		<p align="center"  style="width:500px;">

@@ -33,12 +33,10 @@
 
 import datetime
 import json
-# import math
 import os
 import os.path
-import re
 import gettext
-# import random
+# from gettext import gettext as _
 import socket
 import sys
 import threading
@@ -57,7 +55,6 @@ import kivy
 kivy.require('2.1.0')  # replace with your current kivy version !
 
 from kivy.app import App
-# from kivy.uix.button import Button
 from kivy.uix.togglebutton import ToggleButton
 from kivy.uix.label import Label
 from kivy.uix.floatlayout import FloatLayout
@@ -79,14 +76,6 @@ import schedule
 import subprocess
 import locale
 
-# from gpiozero import LED
-# from gpiozero.pins.pigpio import PiGPIOFactory
-
-# factory = PiGPIOFactory(host='10.1.1.110')
-#
-# pump = LED(21, pin_factory=factory)
-# pumpWW = LED(20, pin_factory=factory)
-
 ##############################################################################
 #                                                                            #
 #       GPIO & Simulation Imports                                            #
@@ -98,10 +87,6 @@ try:
 except ImportError:
     import FakeRPi.GPIO as GPIO
 
-try:
-    from w1thermsensor import W1ThermSensor, Unit
-except ImportError:
-    from FakeRPi.w1thermsensor import W1ThermSensor, Unit
 
 ##############################################################################
 #                                                                            #
@@ -109,8 +94,10 @@ except ImportError:
 #                                                                            #
 ##############################################################################
 
-# from w1thermsensor import W1ThermSensor, Unit
-
+try:
+    from w1thermsensor import W1ThermSensor, Unit
+except ImportError:
+    from FakeRPi.w1thermsensor import W1ThermSensor, Unit
 
 ##############################################################################
 #                                                                            #
@@ -126,32 +113,6 @@ try:
 except ImportError:
     mqttAvailable = False
 
-
-##############################################################################
-#                                                                            #
-#       Utility classes                                                      #
-#                                                                            #
-##############################################################################
-
-# class switch(object):
-#    def __init__(self, value):
-#        self.value = value
-#        self.fall = False
-#
-#    def __iter__(self):
-#        """Return the match method once, then stop"""
-#        yield self.match
-#        raise StopIteration
-#
-#    def match(self, *args):
-#        """Indicate whether to enter a case suite"""
-#        if self.fall or not args:
-#            return True
-#        elif self.value in args:  # changed for v1.5, see below
-#            self.fall = True
-#            return True
-#        else:
-#            return False
 
 ##############################################################################
 #                                                                            #
@@ -231,19 +192,18 @@ debug = False
 useTestSchedule = False
 
 # Threading Locks
-
 thermostatLock = threading.RLock()
 weatherLock = threading.Lock()
 scheduleLock = threading.RLock()
 
 # Thermostat persistent settings
-
 settings = JsonStore("thermostat_settings.json")
 state = JsonStore("thermostat_state.json")
 
 # Internationalization (i18n)
-t_locale = 'de_AT.utf8' if not (settings.exists("i18n")) else settings.get("i18n")["locale"]
+t_locale = 'de_DE.utf8' if not (settings.exists("i18n")) else settings.get("i18n")["locale"]
 locale.setlocale(locale.LC_ALL, t_locale)
+gettext.install('thermostat', localedir='locales', names='gettext')
 
 # domesticwater
 domestic_water_enabled = False if not (settings.exists("domestic_water")) else settings.get("domestic_water")["enabled"]
@@ -333,7 +293,6 @@ logFile = None
 def log_dummy(level, child_device, msg_subtype, msg, msg_type=MSG_TYPE_SET, timestamp=True, single=False):
     pass
 
-
 def log_mqtt(level, child_device, msg_subtype, msg, msg_type=MSG_TYPE_SET, timestamp=True, single=False):
     if level >= logLevel:
         ts = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z ") if LOG_ALWAYS_TIMESTAMP or timestamp else ""
@@ -346,13 +305,11 @@ def log_mqtt(level, child_device, msg_subtype, msg, msg_type=MSG_TYPE_SET, times
         else:
             mqttc.publish(topic, payload)
 
-
 def log_file(level, child_device, msg_subtype, msg, msg_type=MSG_TYPE_SET, timestamp=True, single=False):
     if level >= logLevel:
         ts = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z ")
         logFile.write(
             ts + LOG_LEVELS_STR[level] + "/" + child_device + "/" + msg_type + "/" + msg_subtype + ": " + msg + "\n")
-
 
 def log_print(level, child_device, msg_subtype, msg, msg_type=MSG_TYPE_SET, timestamp=True, single=False):
     if level >= logLevel:
@@ -399,7 +356,6 @@ precipUnits = " mm" if tempScale == "metric" else '"'
 precipFactor = 1.0 if tempScale == "metric" else 0.0393701
 precipRound = 0 if tempScale == "metric" else 1
 sensorUnits = Unit.DEGREES_C if tempScale == "metric" else Unit.DEGREES_F
-# sensorUnits         = W1ThermSensor.DEGREES_C if tempScale == "metric" else W1ThermSensor.DEGREES_F
 windFactor = 3.6 if tempScale == "metric" else 1.0
 windUnits = " km/h" if tempScale == "metric" else " mph"
 
@@ -549,104 +505,114 @@ log(LOG_LEVEL_INFO, CHILD_DEVICE_PIR, MSG_SUBTYPE_TRIPPED, str(pirPin), timestam
 
 controlColours = {
     "normal": (1.0, 1.0, 1.0, 1.0),
-    "K\u00fchlen": (0.0, 0.0, 1.0, 0.4),
-    "Heizen": (1.0, 0.0, 0.0, 1.0),
-    "Pumpe": (0.0, 1.0, 0.0, 0.4),
-    "Halten": (0.0, 1.0, 0.0, 0.4),
+    # "K\u00fchlen": (0.0, 0.0, 1.0, 0.4),
+    _("Cool"): (0.0, 0.0, 1.0, 0.4),
+    _("Heat"): (1.0, 0.0, 0.0, 1.0),
+    _("Fan"): (0.0, 1.0, 0.0, 0.4),
+    _("Hold"): (0.0, 1.0, 0.0, 0.4)
 }
-
 
 def setControlState(control, state):
     with thermostatLock:
-        control.state = state
-        if state == "normal":
-            control.background_color = controlColours["normal"]
-        else:
-            control.background_color = controlColours[control.text.replace("[b]", "").replace("[/b]", "")]
+        try:
+            control.state = state
+            if state == "normal":
+                control.background_color = controlColours["normal"]
+            else:
+                control.background_color = controlColours[control.text.replace("[b]", "").replace("[/b]", "")]
 
-        controlLabel = control.text.replace("[b]", "").replace("[/b]", "").lower()
-        log(LOG_LEVEL_STATE, controlLabel + CHILD_DEVICE_SUFFIX_UICONTROL, MSG_SUBTYPE_BINARY_STATUS,
-            "0" if state == "normal" else "1")
+            controlLabel = control.text.replace("[b]", "").replace("[/b]", "").lower()
+            log(LOG_LEVEL_STATE, controlLabel + CHILD_DEVICE_SUFFIX_UICONTROL, MSG_SUBTYPE_BINARY_STATUS,
+                "0" if state == "normal" else "1")
 
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
 
-coolControl = ToggleButton(text="[b]K\u00fchlen[/b]",
+coolControl = ToggleButton(text="[b]" + _("Cool") + "[/b]",
                            markup=True,
                            size_hint=(None, None)
                            )
 
 setControlState(coolControl, "normal" if not (state.exists("state")) else state.get("state")["coolControl"])
 
-heatControl = ToggleButton(text="[b]Heizen[/b]",
+heatControl = ToggleButton(text="[b]" + _("Heat") + "[/b]",
                            markup=True,
                            size_hint=(None, None)
                            )
 
 setControlState(heatControl, "normal" if not (state.exists("state")) else state.get("state")["heatControl"])
 
-fanControl = ToggleButton(text="[b]Pumpe[/b]",
+fanControl = ToggleButton(text="[b]" + _("Fan") + "[/b]",
                           markup=True,
                           size_hint=(None, None)
                           )
 
 setControlState(fanControl, "normal" if not (state.exists("state")) else state.get("state")["fanControl"])
 
-holdControl = ToggleButton(text="[b]Halten[/b]",
+holdControl = ToggleButton(text="[b]" + _("Hold") + "[/b]",
                            markup=True,
                            size_hint=(None, None)
                            )
 
 setControlState(holdControl, "normal" if not (state.exists("state")) else state.get("state")["holdControl"])
 
-
-def get_status_string():
+def get_status_info():
     with thermostatLock:
         sched = "None"
 
         if holdControl.state == "down":
-            sched = "Halten"
+            sched = _("Hold")
         elif useTestSchedule:
             sched = "Test"
         elif heatControl.state == "down":
-            sched = "Heizen"
+            sched = _("Heat")
         elif coolControl.state == "down":
-            sched = "K\u00fchlen"
+            sched = _("Cool")
 
-        return "[b]System:[/b]\n  " + \
-            "Heizen: " + ("[color=00ff00][b]Ein[/b][/color]" if not GPIO.input(heatPin) else "Aus") + "\n  " + \
-            "K\u00fchlen: " + ("[color=00ff00][b]Ein[/b][/color]" if not GPIO.input(coolPin) else "Aus") + "\n  " + \
-            "Pumpe: " + ("[color=00ff00][b]Ein[/b][/color]" if GPIO.input(fanPin) else "Auto") + "\n  " + \
-            "Sched: " + sched
+        status_info = {
+            'heat': f"[color=00ff00][b]" + _("On") + "[/b][/color]" if not GPIO.input(heatPin) else f"" + _("Off"),
+            'cool': f"[color=00ff00][b]" + _("On") + "[/b][/color]" if not GPIO.input(coolPin) else f"" + _("Off"),
+            'fan': f"[color=00ff00][b]" + _("On") + "[/b][/color]" if GPIO.input(fanPin) else f"" + _("Off"),
+            'sched': sched
+        }
 
+        # Konvertieren Sie das Dictionary in einen JSON-String
+        status_info_json = json.dumps(status_info)
 
-versionLabel = Label(text="Thermostat v" + str(THERMOSTAT_VERSION), size_hint=(None, None), font_size='10sp',
-                     markup=True, text_size=(150, 20))
-currentLabel = Label(text="[b]" + str(currentTemp) + scaleUnits + "[/b]", size_hint=(None, None), font_size='100sp',
-                     markup=True, text_size=(300, 200))
-currentWaterLabel = Label(text="[b]Warmwasser: " + str(domesticwater) + scaleUnits, size_hint=(None, None), font_size='25sp',
-                          markup=True, text_size=(300, 100))
+        return status_info_json
 
-altCurLabel = Label(text=currentLabel.text, size_hint=(None, None), font_size='100sp', markup=True,
-                    text_size=(300, 200), color=(0.4, 0.4, 0.4, 0.2))
-altWaterLabel = Label(text=currentWaterLabel.text, size_hint=(None, None), font_size='50sp', markup=True,
-                      text_size=(500, 200), color=(0.4, 0.4, 0.4, 0.2))
+versionLabel = Label(text="Thermostat v" + str(THERMOSTAT_VERSION), size_hint=(None, None), font_size='10sp', markup=True, text_size=(150, 20))
+currentLabel = Label(text="[b]" + str(currentTemp) + scaleUnits + "[/b]", size_hint=(None, None), font_size='100sp', markup=True, text_size=(300, 200))
+currentWaterLabel = Label(text="[b]" + _("Domestic water") + "[/b]:", size_hint=(None, None), font_size='25sp', markup=True, text_size=(200, 100))
+currentWaterValueLabel = Label(text=str(domesticwater) + scaleUnits, size_hint=(None, None), font_size='25sp', markup=True, text_size=(100, 100))
 
-setLabel = Label(text="  Set\n[b]" + str(setTemp) + scaleUnits + "[/b]", size_hint=(None, None), font_size='25sp',
-                 markup=True, text_size=(100, 100))
-statusLabel = Label(text=get_status_string(), size_hint=(None, None), font_size='20sp', markup=True,
-                    text_size=(140, 130))
+altCurLabel = Label(text=currentLabel.text, size_hint=(None, None), font_size='100sp', markup=True, text_size=(300, 200), color=(0.4, 0.4, 0.4, 0.2))
+altWaterLabel = Label(text=currentWaterLabel.text, size_hint=(None, None), font_size='50sp', markup=True, text_size=(500, 200), color=(0.4, 0.4, 0.4, 0.2))
+altWaterValueLabel = Label(text=currentWaterValueLabel.text, size_hint=(None, None), font_size='50sp', markup=True, text_size=(500, 200), color=(0.4, 0.4, 0.4, 0.2))
 
-dateLabel = Label(text="[b]" + time.strftime("%a %d. %b %Y") + "[/b]", size_hint=(None, None), font_size='20sp',
-                  markup=True, text_size=(270, 40))
+setLabel = Label(text="  Set\n[b]" + str(setTemp) + scaleUnits + "[/b]", size_hint=(None, None), font_size='25sp', markup=True, text_size=(100, 100))
+
+status_info = json.loads(get_status_info())
+
+statusHeatLabel = Label(text=_("Heat") + ":", size_hint=(None, None), font_size='20sp', markup=True, text_size=(90, 20), halign='left')
+statusCoolLabel = Label(text=_("Cool") + ":", size_hint=(None, None), font_size='20sp', markup=True, text_size=(90, 20), halign='left')
+statusFanLabel = Label(text=_("Fan") + ":", size_hint=(None, None), font_size='20sp', markup=True, text_size=(90, 20), halign='left')
+statusSchedLabel = Label(text=_("Sched") + ":", size_hint=(None, None), font_size='20sp', markup=True, text_size=(90, 20), halign='left')
+
+statusHeatValueLabel = Label(text=status_info['heat'], size_hint=(None, None), font_size='20sp', markup=True, text_size=(70, 20), halign='left')
+statusCoolValueLabel = Label(text=status_info['cool'], size_hint=(None, None), font_size='20sp', markup=True, text_size=(70, 20), halign='left')
+statusFanValueLabel = Label(text=status_info['fan'], size_hint=(None, None), font_size='20sp', markup=True, text_size=(70, 20), halign='left')
+statusSchedValueLabel = Label(text=status_info['sched'], size_hint=(None, None), font_size='20sp', markup=True, text_size=(70, 20), halign='left')
+
+dateLabel = Label(text="[b]" + time.strftime("%a %d. %b %Y") + "[/b]", size_hint=(None, None), font_size='20sp', markup=True, text_size=(270, 40))
 
 timeStr = time.strftime("%H:%M")
 
-timeLabel = Label(text="[b]" + (timeStr if timeStr[0:1] != "0" else timeStr[1:]) + "[/b]", size_hint=(None, None),
-                  font_size='40sp', markup=True, text_size=(180, 75))
-altTimeLabel = Label(text=timeLabel.text, size_hint=(None, None), font_size='40sp', markup=True, text_size=(180, 75),
-                     color=(0.4, 0.4, 0.4, 0.2))
+timeLabel = Label(text="[b]" + (timeStr if timeStr[0:1] != "0" else timeStr[1:]) + "[/b]", size_hint=(None, None), font_size='40sp', markup=True, text_size=(180, 75))
+altTimeLabel = Label(text=timeLabel.text, size_hint=(None, None), font_size='40sp', markup=True, text_size=(180, 75), color=(0.4, 0.4, 0.4, 0.2))
 
-tempSlider = Slider(orientation='vertical', min=minTemp, max=maxTemp, step=tempStep, value=setTemp,
-                    size_hint=(None, None))
+tempSlider = Slider(orientation='vertical', min=minTemp, max=maxTemp, step=tempStep, value=setTemp, size_hint=(None, None))
 
 screenMgr = None
 
@@ -716,28 +682,50 @@ forecastRefreshInterval = settings.get("weather")["forecastRefreshInterval"] * 6
 weatherExceptionInterval = settings.get("weather")["weatherExceptionInterval"] * 60
 
 weatherSummaryLabel = Label(text="", size_hint=(None, None), font_size='20sp', markup=True, text_size=(200, 20))
-weatherDetailsLabel = Label(text="", size_hint=(None, None), font_size='20sp', markup=True, text_size=(300, 150),
-                            valign="top")
 weatherImg = Image(source="web/images/na.png", size_hint=(None, None))
+weatherTempLabel = Label(text=_("Temp") + ":", size_hint=(None, None), font_size='20sp', markup=True, text_size=(240, 20), valign="top", halign='left')
+weatherTempValueLabel = Label(text="N/A", size_hint=(None, None), font_size='20sp', markup=True, text_size=(160, 20), valign="top", halign='left')
+weatherHumidityLabel = Label(text=_("Humidity") + ":", size_hint=(None, None), font_size='20sp', markup=True, text_size=(240, 20), valign="top", halign='left')
+weatherHumidityValueLabel = Label(text="N/A", size_hint=(None, None), font_size='20sp', markup=True, text_size=(160, 20), valign="top", halign='left')
+weatherWindLabel = Label(text=_("Wind") + ":", size_hint=(None, None), font_size='20sp', markup=True, text_size=(240, 20), valign="top", halign='left')
+weatherWindValueLabel = Label(text="N/A", size_hint=(None, None), font_size='20sp', markup=True, text_size=(160, 20), valign="top", halign='left')
+weatherCloudsLabel = Label(text=_("Clouds") + ":", size_hint=(None, None), font_size='20sp', markup=True, text_size=(240, 20), valign="top", halign='left')
+weatherCloudsValueLabel = Label(text="N/A", size_hint=(None, None), font_size='20sp', markup=True, text_size=(160, 20), valign="top", halign='left')
+weatherSunLabel = Label(text=_("Sun") + ":", size_hint=(None, None), font_size='20sp', markup=True, text_size=(240, 20), valign="top", halign='left')
+weatherSunValueLabel = Label(text="N/A", size_hint=(None, None), font_size='20sp', markup=True, text_size=(160, 20), valign="top", halign='left')
 
 forecastTodaySummaryLabel = Label(text="", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 15))
-forecastTodayDetailsLabel = Label(text="", size_hint=(None, None), font_size='15sp', markup=True, text_size=(200, 150),
-                                  valign="top")
 forecastTodayImg = Image(source="web/images/na.png", size_hint=(None, None))
-forecastTomoSummaryLabel = Label(text="", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 15))
-forecastTomoDetailsLabel = Label(text="", size_hint=(None, None), font_size='15sp', markup=True, text_size=(200, 150),
-                                 valign="top")
-forecastTomoImg = Image(source="web/images/na.png", size_hint=(None, None))
+forecastTodayHighLabel = Label(text=_("High") + ":", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 16), valign="top", halign='left')
+forecastTodayHighValueLabel = Label(text="N/A", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
+forecastTodayHumidityLabel = Label(text=_("Humidity") + ":", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 16), valign="top", halign='left')
+forecastTodayHumidityValueLabel = Label(text="N/A", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
+forecastTodayWindLabel = Label(text=_("Wind") + ":", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 16), valign="top", halign='left')
+forecastTodayWindValueLabel = Label(text="N/A", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
+forecastTodayCloudsLabel = Label(text=_("Clouds") + ":", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 16), valign="top", halign='left')
+forecastTodayCloudsValueLabel = Label(text="N/A", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
+forecastTodayRainLabel = Label(text="", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 16), valign="top", halign='left')
+forecastTodayRainValueLabel = Label(text="", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
 
+forecastTomoSummaryLabel = Label(text="", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 15))
+forecastTomoImg = Image(source="web/images/na.png", size_hint=(None, None))
+forecastTomoHighLabel = Label(text=_("High") + ":", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 16), valign="top", halign='left')
+forecastTomoHighValueLabel = Label(text="N/A", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
+forecastTomoHumidityLabel = Label(text=_("Humidity") + ":", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 16), valign="top", halign='left')
+forecastTomoHumidityValueLabel = Label(text="N/A", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
+forecastTomoWindLabel = Label(text=_("Wind") + ":", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 16), valign="top", halign='left')
+forecastTomoWindValueLabel = Label(text="N/A", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
+forecastTomoCloudsLabel = Label(text=_("Clouds") + ":", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 16), valign="top", halign='left')
+forecastTomoCloudsValueLabel = Label(text="N/A", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
+forecastTomoRainLabel = Label(text="", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 16), valign="top", halign='left')
+forecastTomoRainValueLabel = Label(text="", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
 
 def get_weather(url):
     return json.loads(urllib.request.urlopen(url, None, weatherURLTimeout).read())
 
-
 def get_cardinal_direction(heading):
     directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW", "N"]
     return directions[int(round(((heading % 360) / 45)))]
-
 
 def display_current_weather(dt):
     with weatherLock:
@@ -750,28 +738,24 @@ def display_current_weather(dt):
 
             weatherSummaryLabel.text = "[b]" + weather["weather"][0]["description"].title() + "[/b]"
 
-            weatherDetailsLabel.text = "\n".join((
-                "Temp:       " + str(int(round(weather["main"]["temp"], 0))) + scaleUnits,
-                "Humidity: " + str(weather["main"]["humidity"]) + "%",
-                "Wind:        " + str(
-                    int(round(weather["wind"]["speed"] * windFactor))) + windUnits + " " + get_cardinal_direction(
-                    weather["wind"]["deg"]),
-                "Wolken:    " + str(weather["clouds"]["all"]) + "%",
-                "Sonne:      " + time.strftime("%H:%M",
-                                               time.localtime(weather["sys"]["sunrise"])) + ", " + time.strftime(
-                    "%H:%M", time.localtime(weather["sys"]["sunset"])) + ""
-            ))
+            weatherTempValueLabel.text = str(int(round(weather["main"]["temp"], 0))) + scaleUnits
+            weatherHumidityValueLabel.text = str(weather["main"]["humidity"]) + "%"
+            weatherWindValueLabel.text = str(int(round(weather["wind"]["speed"] * windFactor))) + windUnits + " " + get_cardinal_direction(weather["wind"]["deg"])
+            weatherCloudsValueLabel.text = str(weather["clouds"]["all"]) + "%"
+            weatherSunValueLabel.text = time.strftime("%H:%M", time.localtime(weather["sys"]["sunrise"])) + ", " + time.strftime("%H:%M", time.localtime(weather["sys"]["sunset"])) + ""
 
-            log(LOG_LEVEL_INFO, CHILD_DEVICE_WEATHER_CURR, MSG_SUBTYPE_TEXT,
-                weather["weather"][0]["description"].title() + "; " + re.sub('\n', "; ", re.sub(' +', ' ',
-                                                                                                weatherDetailsLabel.text).strip()))
+            log(LOG_LEVEL_INFO, CHILD_DEVICE_WEATHER_CURR, MSG_SUBTYPE_TEXT, json.dumps(weather))
 
         except Exception as e:
             interval = weatherExceptionInterval
 
             weatherImg.source = "web/images/na.png"
-            weatherSummaryLabel.text = ""
-            weatherDetailsLabel.text = ""
+            weatherSummaryLabel.text = "N/A"
+            weatherTempValueLabel.text = "N/A"
+            weatherHumidityValueLabel.text = "N/A"
+            weatherWindValueLabel.pos.text = "N/A"
+            weatherCloudsValueLabel.pos.text = "N/A"
+            weatherSunValueLabel.pos.text = "N/A"
 
             log(LOG_LEVEL_ERROR, CHILD_DEVICE_WEATHER_CURR, MSG_SUBTYPE_TEXT, "Update FAILED!")
             log(LOG_LEVEL_ERROR, CHILD_DEVICE_WEATHER_CURR, MSG_SUBTYPE_TEXT, "Exception {e}")
@@ -787,7 +771,6 @@ def get_precip_amount(raw):
     else:
         return str(precip)
 
-
 def display_forecast_weather(dt):
     with weatherLock:
         interval = forecastRefreshInterval
@@ -799,75 +782,74 @@ def display_forecast_weather(dt):
             tomo = forecast["list"][1]
 
             forecastTodayImg.source = "web/images/" + today["weather"][0]["icon"] + ".png"
-
             forecastTodaySummaryLabel.text = "[b]" + today["weather"][0]["description"].title() + "[/b]"
+            forecastTodayHighValueLabel.text = str(int(round(today["temp"]["max"], 0))) + scaleUnits + ", " + _("Low") + ": " + str(int(round(today["temp"]["min"], 0))) + scaleUnits
+            forecastTodayHumidityValueLabel.text = str(today["humidity"]) + "%"
+            forecastTodayWindValueLabel.text = str(int(round(today["speed"] * windFactor))) + windUnits + " " + get_cardinal_direction(today["deg"])
+            forecastTodayCloudsValueLabel.text = str(today["clouds"]) + "%"
 
-            todayText = "\n".join((
-                "High:         " + str(int(round(today["temp"]["max"], 0))) + scaleUnits + ", Low: " + str(
-                    int(round(today["temp"]["min"], 0))) + scaleUnits,
-                "Humidity: " + str(today["humidity"]) + "%",
-                "Wind:        " + str(
-                    int(round(today["speed"] * windFactor))) + windUnits + " " + get_cardinal_direction(today["deg"]),
-                "Wolken:   " + str(today["clouds"]) + "%",
-            ))
-
+            rainValueText = ""
             if "rain" in today or "snow" in today:
-                todayText += "\n"
                 if "rain" in today:
-                    todayText += "Regen:        " + get_precip_amount(today["rain"]) + precipUnits
+                    forecastTodayRainLabel.text = _("Rain") + ":"
+                    rainValueText = get_precip_amount(today["rain"]) + precipUnits
                     if "snow" in today:
-                        todayText += ", Schnee: " + get_precip_amount(today["snow"]) + precipUnits
+                        rainValueText += ", " + _("Snow") + ": " + get_precip_amount(today["snow"]) + precipUnits
                 else:
-                    todayText += "Schnee:       " + get_precip_amount(today["snow"]) + precipUnits
+                    forecastTodayRainLabel.text = _("Snow") + ":"
+                    rainValueText = get_precip_amount(today["snow"]) + precipUnits
 
-            forecastTodayDetailsLabel.text = todayText
+            forecastTodayRainValueLabel.text = rainValueText
 
             forecastTomoImg.source = "web/images/" + tomo["weather"][0]["icon"] + ".png"
-
             forecastTomoSummaryLabel.text = "[b]" + tomo["weather"][0]["description"].title() + "[/b]"
+            forecastTomoHighValueLabel.text = str(int(round(tomo["temp"]["max"], 0))) + scaleUnits + ", Low: " + str(int(round(tomo["temp"]["min"], 0))) + scaleUnits
+            forecastTomoHumidityValueLabel.text = str(tomo["humidity"]) + "%"
+            forecastTomoWindValueLabel.text = str(int(round(tomo["speed"] * windFactor))) + windUnits + " " + get_cardinal_direction(tomo["deg"])
+            forecastTomoCloudsValueLabel.text = str(tomo["clouds"]) + "%"
 
-            tomoText = "\n".join((
-                "High:         " + str(int(round(tomo["temp"]["max"], 0))) + scaleUnits + ", Low: " + str(
-                    int(round(tomo["temp"]["min"], 0))) + scaleUnits,
-                "Humidity: " + str(tomo["humidity"]) + "%",
-                "Wind:        " + str(
-                    int(round(tomo["speed"] * windFactor))) + windUnits + " " + get_cardinal_direction(tomo["deg"]),
-                "Wolken:    " + str(tomo["clouds"]) + "%",
-            ))
-
+            rainValueText = ""
             if "rain" in tomo or "snow" in tomo:
-                tomoText += "\n"
                 if "rain" in tomo:
-                    tomoText += "Regen:       " + get_precip_amount(tomo["rain"]) + precipUnits
+                    forecastTomoRainLabel.text = _("Rain") + ":"
+                    rainValueText = get_precip_amount(tomo["rain"]) + precipUnits
                     if "snow" in tomo:
-                        tomoText += ", Schnee: " + get_precip_amount(tomo["snow"]) + precipUnits
+                        rainValueText += ", " + _("Snow") + ": " + get_precip_amount(tomo["snow"]) + precipUnits
                 else:
-                    tomoText += "Schnee:      " + get_precip_amount(tomo["snow"]) + precipUnits
+                    forecastTomoRainLabel.text = _("Snow") + ":"
+                    rainValueText = get_precip_amount(tomo["snow"]) + precipUnits
 
-            forecastTomoDetailsLabel.text = tomoText
+            forecastTomoRainValueLabel.text = rainValueText
 
-            log(LOG_LEVEL_INFO, CHILD_DEVICE_WEATHER_FCAST_TODAY, MSG_SUBTYPE_TEXT,
-                today["weather"][0]["description"].title() + "; " + re.sub('\n', "; ", re.sub(' +', ' ',
-                                                                                              forecastTodayDetailsLabel.text).strip()))
-            log(LOG_LEVEL_INFO, CHILD_DEVICE_WEATHER_FCAST_TOMO, MSG_SUBTYPE_TEXT,
-                tomo["weather"][0]["description"].title() + "; " + re.sub('\n', "; ", re.sub(' +', ' ',
-                                                                                             forecastTomoDetailsLabel.text).strip()))
+            log(LOG_LEVEL_INFO, CHILD_DEVICE_WEATHER_CURR, MSG_SUBTYPE_TEXT, json.dumps(today["weather"][0]))
+            log(LOG_LEVEL_INFO, CHILD_DEVICE_WEATHER_CURR, MSG_SUBTYPE_TEXT, json.dumps(tomo["weather"][0]))
 
         except Exception as e:
             interval = weatherExceptionInterval
 
             forecastTodayImg.source = "web/images/na.png"
             forecastTodaySummaryLabel.text = ""
-            forecastTodayDetailsLabel.text = ""
+            forecastTodayRainLabel.text = ""
+            forecastTodayRainValueLabel.text = ""
+            forecastTodayHighValueLabel.text = "N/A"
+            forecastTodayHumidityValueLabel.text = "N/A"
+            forecastTodayWindValueLabel.text = "N/A"
+            forecastTodayCloudsValueLabel.text = "N/A"
+            forecastTodayRainLabel.text = ""
+            forecastTodayRainValueLabel.text = ""
+
             forecastTomoImg.source = "web/images/na.png"
             forecastTomoSummaryLabel.text = ""
-            forecastTomoDetailsLabel.text = ""
-
+            forecastTomoHighValueLabel.text = "N/A"
+            forecastTomoHumidityValueLabel.text = "N/A"
+            forecastTomoWindValueLabel.text = "N/A"
+            forecastTomoCloudsValueLabel.text = "N/A"
+            forecastTomoRainLabel.text = ""
+            forecastTomoRainValueLabel.text = ""
             log(LOG_LEVEL_ERROR, CHILD_DEVICE_WEATHER_FCAST_TODAY, MSG_SUBTYPE_TEXT, "Update FAILED!")
             log(LOG_LEVEL_ERROR, CHILD_DEVICE_WEATHER_FCAST_TODAY, MSG_SUBTYPE_TEXT, "Exception {e}")
 
         Clock.schedule_once(display_forecast_weather, interval)
-
 
 ##############################################################################
 #                                                                            #
@@ -916,15 +898,11 @@ def change_system_settings():
 
         if fanControl.state == "down":
             GPIO.output(fanPin, GPIO.HIGH)
-            # pump.on()
-            # setRemote(11)
             setMqttFanCommand("on")
             log(LOG_LEVEL_STATE, CHILD_DEVICE_FAN, MSG_SUBTYPE_TEXT, "1 pump on")
             # setRemotePump( 11 )
         else:
-            # setRemote(10)
             setMqttFanCommand("off")
-            # setRemotePump( 10 )
             if GPIO.input(heatPin) and GPIO.input(coolPin):
                 GPIO.output(fanPin, GPIO.LOW)
                 log(LOG_LEVEL_STATE, CHILD_DEVICE_FAN, MSG_SUBTYPE_TEXT, "3 GPIO.LOW")
@@ -933,7 +911,11 @@ def change_system_settings():
         state.put("state", setTemp=setTemp, heatControl=heatControl.state, coolControl=coolControl.state,
                   fanControl=fanControl.state, holdControl=holdControl.state)
 
-        statusLabel.text = get_status_string()
+        status_info = json.loads(get_status_info())
+        statusHeatValueLabel.text = status_info['heat']
+        statusCoolValueLabel.text = status_info['cool']
+        statusFanValueLabel.text = status_info['fan']
+        statusSchedValueLabel.text = status_info['sched']
 
         if hpin_start != str(GPIO.input(heatPin)):
             log(LOG_LEVEL_STATE, CHILD_DEVICE_HEAT, MSG_SUBTYPE_BINARY_STATUS, "1" if GPIO.input(heatPin) else "0")
@@ -991,65 +973,6 @@ def check_sensor_temp(dt):
         altTimeLabel.text = timeLabel.text
 
         change_system_settings()
-
-def check_hotwater_temp():
-    while True:
-        with thermostatLock:
-            global hotWater
-            global currentWaterLabel, altWaterLabel
-
-            try:
-                # Create a TCP/IP socket
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.settimeout(10)
-                # Connect the socket to the port where the server is listening
-                server_address = ('10.1.1.110', 5000)
-                sock.connect(server_address)
-
-                # Send data
-                message = '2'
-                sock.sendall(message.encode("utf-8"))
-
-                data = sock.recv(1024)
-                data = str(data.decode("utf-8")).strip()
-                data = round(float(data), 1)
-                log(LOG_LEVEL_STATE, CHILD_DEVICE_TEMP, MSG_SUBTYPE_TEMPERATURE, str(data))
-                sock.close()
-
-                hotWater = data
-                currentWaterLabel.text = "[b]Warmwasser: " + str(data) + scaleUnits + "[/b]"
-                altWaterLabel.text = "[b]Warmwasser: " + str(data) + scaleUnits + "[/b]"
-
-            except:
-                pass
-
-        time.sleep(10)
-
-
-def setRemote(what):
-    with thermostatLock:
-        try:
-            # Create a TCP/IP socket
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.settimeout(10)
-            # Connect the socket to the port where the server is listening
-            server_address = ('10.1.1.110', 5000)
-            sock.connect(server_address)
-
-            # Send data
-            message = str(what)
-            sock.sendall(message.encode("utf-8"))
-
-            data = sock.recv(1024)
-            data = str(data.decode("utf-8")).strip()
-            data = round(float(data), 1)
-            log(LOG_LEVEL_STATE, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT, "setRemote Pump " + str(data))
-            sock.close()
-
-        except Exception as e:
-            pass
-            log(LOG_LEVEL_STATE, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT, "setRemote Pump: Error = " + repr(e))
-
 
 # This is called when the desired temp slider is updated:
 def update_set_temp(slider, value):
@@ -1123,24 +1046,6 @@ class MinimalScreen(Screen):
             return True
 
 
-def screen_off():
-    command1 = "echo 1"
-    command2 = "tee /sys/class/backlight/rpi_backlight/bl_power"
-    process1 = subprocess.Popen(command1.split(), stdout=subprocess.PIPE)
-    process2 = subprocess.Popen(command2.split(), stdin=process1.stdout, stdout=subprocess.PIPE)
-    output = process2.communicate()[0]
-    print(output)
-
-
-def screen_on():
-    command1 = "echo 0"
-    command2 = "tee /sys/class/backlight/rpi_backlight/bl_power"
-    process1 = subprocess.Popen(command1.split(), stdout=subprocess.PIPE)
-    process2 = subprocess.Popen(command2.split(), stdin=process1.stdout, stdout=subprocess.PIPE)
-    output = process2.communicate()[0]
-    print(output)
-
-
 ##############################################################################
 #                                                                            #
 #       Utility Functions                                                    #
@@ -1178,16 +1083,6 @@ def getVersion(message):
 def restart(message):
     payload = message.payload.decode('utf-8')
 
-    # Zeigen Sie den Inhalt der Nachricht und das Empfangsdatum und die Uhrzeit an
-    log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/restart", "Empfangene Nachricht: {payload}",
-        single=True)
-    log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/restart", "Empfangszeitpunkt: {message.timestamp}",
-        single=True)
-    print("Empfangene Nachricht: {payload}")
-    print("Empfangszeitpunkt: {message.timestamp}")
-
-    pass
-
     log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/restart", "Thermostat restarting...", single=True)
     GPIO.cleanup()
 
@@ -1201,7 +1096,6 @@ def restart(message):
 
     os.execl(sys.executable, 'python', __file__, *sys.argv[1:])  # This does not return!!!
 
-
 def setLogLevel(msg):
     global logLevel
 
@@ -1214,9 +1108,9 @@ def setLogLevel(msg):
         log(LOG_LEVEL_ERROR, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/loglevel",
             "Invalid LogLevel: " + str(msg.payload))
 
-def get_domestic_water(message):
+def set_domestic_water(message):
     global domestic_key_value_pair, domesticwater
-    global currentWaterLabel, altWaterLabel, domestic_last_message_time
+    global currentWaterValueLabel, altWaterValueLabel, domestic_last_message_time
     try:
         payload = message.payload
         if isinstance(payload, bytes):
@@ -1226,8 +1120,8 @@ def get_domestic_water(message):
         domestic_water_value = data.get(domestic_key_value_pair)
         if domestic_water_value is not None and domesticwater != domestic_water_value:
             domesticwater = domestic_water_value
-            currentWaterLabel.text = "[b]Warmwasser: " + str(domesticwater) + scaleUnits + "[/b]"
-            altWaterLabel.text = "[b]Warmwasser: " + str(domesticwater) + scaleUnits + "[/b]"
+            currentWaterValueLabel.text = "[b]" + str(domesticwater) + scaleUnits + "[/b]"
+            altWaterValueLabel.text = "[b]" + str(domesticwater) + scaleUnits + "[/b]"
 
         domestic_last_message_time = time.time()
         Clock.schedule_once(check_domestic_water_timeout, domestic_timeout_duration)
@@ -1237,13 +1131,13 @@ def get_domestic_water(message):
 
 def check_domestic_water_timeout(dt):
     global domestic_last_message_time, domesticwater
-    global currentWaterLabel, altWaterLabel
+    global currentWaterValueLabel, altWaterValueLabel
 
     current_time = time.time()
     if current_time - domestic_last_message_time > domestic_timeout_duration:
         domesticwater = "n/a"
-        currentWaterLabel.text = "[b]Warmwasser: " + str(domesticwater) + "[/b]"
-        altWaterLabel.text = "[b]Warmwasser: " + str(domesticwater) + "[/b]"
+        currentWaterValueLabel.text = "[b]" + str(domesticwater) + "[/b]"
+        altWaterValueLabel.text = "[b]" + str(domesticwater) + "[/b]"
 
 def setMqttFanCommand(state):
     if mqttEnabled:
@@ -1256,9 +1150,9 @@ if mqttEnabled:
     mqttc.message_callback_add(mqttSub_restart, lambda client, userdata, message: restart(message) )
     mqttc.message_callback_add(mqttSub_loglevel, lambda client, userdata, message: setLogLevel(message))
     mqttc.message_callback_add(mqttSub_version, lambda client, userdata, message: getVersion(message))
-    mqttc.message_callback_add(mqttSub_state, lambda client, userdata, message: get_status_string())
+    mqttc.message_callback_add(mqttSub_state, lambda client, userdata, message: get_status_info())
     if domestic_water_enabled:
-        mqttc.message_callback_add(domestic_water_topic, lambda client, userdata, message: get_domestic_water(message))
+        mqttc.message_callback_add(domestic_water_topic, lambda client, userdata, message: set_domestic_water(message))
 
     # Make sure we can reach the mqtt server by pinging it
     pingCount = 0
@@ -1281,8 +1175,6 @@ if mqttEnabled:
 class ThermostatApp(App):
     def build(self):
         global screenMgr
-
-        gettext.install('thermostat', localedir='locales', names='gettext')
 
         # Set up the thermostat UI layout:
         thermostatUI = FloatLayout(size=(800, 480))
@@ -1318,7 +1210,14 @@ class ThermostatApp(App):
         fanControl.size = (80, 80)
         fanControl.pos = (680, 160)
 
-        statusLabel.pos = (660, 40)
+        statusHeatLabel.pos = (635, 80)
+        statusCoolLabel.pos = (635, 60)
+        statusFanLabel.pos = (635, 40)
+        statusSchedLabel.pos = (635, 20)
+        statusHeatValueLabel.pos = (710, 80)
+        statusCoolValueLabel.pos = (710, 60)
+        statusFanValueLabel.pos = (710, 40)
+        statusSchedValueLabel.pos = (710, 20)
 
         tempSlider.size = (100, 360)
         tempSlider.pos = (570, 20)
@@ -1329,30 +1228,57 @@ class ThermostatApp(App):
         setLabel.pos = (590, 390)
 
         currentLabel.pos = (390, 300)
-        currentWaterLabel.pos = (395, 235)
+        currentWaterLabel.pos = (340, 235)
+        currentWaterValueLabel.pos = (450, 235)
 
         dateLabel.pos = (180, 370)
         timeLabel.pos = (345, 380)
 
         weatherImg.pos = (265, 160)
         weatherSummaryLabel.pos = (430, 160)
-        weatherDetailsLabel.pos = (395, 60)
+        weatherTempLabel.pos = (365, 135)
+        weatherTempValueLabel.pos = (450, 135)
+        weatherHumidityLabel.pos = (365, 110)
+        weatherHumidityValueLabel.pos = (450, 110)
+        weatherWindLabel.pos = (365, 85)
+        weatherWindValueLabel.pos = (450, 85)
+        weatherCloudsLabel.pos = (365, 60)
+        weatherCloudsValueLabel.pos = (450, 60)
+        weatherSunLabel.pos = (365, 35)
+        weatherSunValueLabel.pos = (450, 35)
 
         versionLabel.pos = (320, 0)
 
-        forecastTodayHeading = Label(text=_("[b]Today[/b]:"), font_size='20sp', markup=True, size_hint=(None, None),
+        forecastTodayHeading = Label(text="[b]"+ _("Today") + "[/b]:", font_size='20sp', markup=True, size_hint=(None, None),
                                      pos=(0, 300))
 
         forecastTodayImg.pos = (0, 275)
         forecastTodaySummaryLabel.pos = (100, 275)
-        forecastTodayDetailsLabel.pos = (80, 167)
+        forecastTodayHighLabel.pos = (30, 248)
+        forecastTodayHighValueLabel.pos = (150, 248)
+        forecastTodayHumidityLabel.pos = (30, 231)
+        forecastTodayHumidityValueLabel.pos = (150, 231)
+        forecastTodayWindLabel.pos = (30, 214)
+        forecastTodayWindValueLabel.pos = (150, 214)
+        forecastTodayCloudsLabel.pos = (30, 197)
+        forecastTodayCloudsValueLabel.pos = (150, 197)
+        forecastTodayRainLabel.pos = (30, 180)
+        forecastTodayRainValueLabel.pos = (150, 180)
 
-        forecastTomoHeading = Label(text=_("[b]Tomorow[/b]:"), font_size='20sp', markup=True, size_hint=(None, None),
+        forecastTomoHeading = Label(text="[b]" + _("Tomorow") + "[/b]:", font_size='20sp', markup=True, size_hint=(None, None),
                                     pos=(0, 130))
-
         forecastTomoImg.pos = (0, 100)
         forecastTomoSummaryLabel.pos = (100, 100)
-        forecastTomoDetailsLabel.pos = (80, 7)
+        forecastTomoHighLabel.pos = (30, 73)
+        forecastTomoHighValueLabel.pos = (150, 73)
+        forecastTomoHumidityLabel.pos = (30, 57)
+        forecastTomoHumidityValueLabel.pos = (150, 57)
+        forecastTomoWindLabel.pos = (30, 41)
+        forecastTomoWindValueLabel.pos = (150, 41)
+        forecastTomoCloudsLabel.pos = (30, 25)
+        forecastTomoCloudsValueLabel.pos = (150, 25)
+        forecastTomoRainLabel.pos = (30, 9)
+        forecastTomoRainValueLabel.pos = (150, 9)
 
         # Add the UI elements to the thermostat UI layout:
         thermostatUI.add_widget(wimg)
@@ -1363,22 +1289,60 @@ class ThermostatApp(App):
         thermostatUI.add_widget(tempSlider)
         thermostatUI.add_widget(currentLabel)
         thermostatUI.add_widget(currentWaterLabel)
+        thermostatUI.add_widget(currentWaterValueLabel)
         thermostatUI.add_widget(setLabel)
-        thermostatUI.add_widget(statusLabel)
+        thermostatUI.add_widget(statusHeatLabel)
+        thermostatUI.add_widget(statusCoolLabel)
+        thermostatUI.add_widget(statusFanLabel)
+        thermostatUI.add_widget(statusSchedLabel)
+        thermostatUI.add_widget(statusHeatValueLabel)
+        thermostatUI.add_widget(statusCoolValueLabel)
+        thermostatUI.add_widget(statusFanValueLabel)
+        thermostatUI.add_widget(statusSchedValueLabel)
+
         thermostatUI.add_widget(dateLabel)
         thermostatUI.add_widget(timeLabel)
         thermostatUI.add_widget(weatherImg)
         thermostatUI.add_widget(weatherSummaryLabel)
-        thermostatUI.add_widget(weatherDetailsLabel)
+        thermostatUI.add_widget(weatherTempLabel)
+        thermostatUI.add_widget(weatherTempValueLabel)
+        thermostatUI.add_widget(weatherHumidityLabel)
+        thermostatUI.add_widget(weatherHumidityValueLabel)
+        thermostatUI.add_widget(weatherWindLabel)
+        thermostatUI.add_widget(weatherWindValueLabel)
+        thermostatUI.add_widget(weatherCloudsLabel)
+        thermostatUI.add_widget(weatherCloudsValueLabel)
+        thermostatUI.add_widget(weatherSunLabel)
+        thermostatUI.add_widget(weatherSunValueLabel)
+
         thermostatUI.add_widget(versionLabel)
         thermostatUI.add_widget(forecastTodayHeading)
         thermostatUI.add_widget(forecastTodayImg)
         thermostatUI.add_widget(forecastTodaySummaryLabel)
-        thermostatUI.add_widget(forecastTodayDetailsLabel)
+        thermostatUI.add_widget(forecastTodayHighLabel)
+        thermostatUI.add_widget(forecastTodayHighValueLabel)
+        thermostatUI.add_widget(forecastTodayHumidityLabel)
+        thermostatUI.add_widget(forecastTodayHumidityValueLabel)
+        thermostatUI.add_widget(forecastTodayWindLabel)
+        thermostatUI.add_widget(forecastTodayWindValueLabel)
+        thermostatUI.add_widget(forecastTodayCloudsLabel)
+        thermostatUI.add_widget(forecastTodayCloudsValueLabel)
+        thermostatUI.add_widget(forecastTodayRainLabel)
+        thermostatUI.add_widget(forecastTodayRainValueLabel)
+
         thermostatUI.add_widget(forecastTomoHeading)
         thermostatUI.add_widget(forecastTomoImg)
-        thermostatUI.add_widget(forecastTomoDetailsLabel)
         thermostatUI.add_widget(forecastTomoSummaryLabel)
+        thermostatUI.add_widget(forecastTomoHighLabel)
+        thermostatUI.add_widget(forecastTomoHighValueLabel)
+        thermostatUI.add_widget(forecastTomoHumidityLabel)
+        thermostatUI.add_widget(forecastTomoHumidityValueLabel)
+        thermostatUI.add_widget(forecastTomoWindLabel)
+        thermostatUI.add_widget(forecastTomoWindValueLabel)
+        thermostatUI.add_widget(forecastTomoCloudsLabel)
+        thermostatUI.add_widget(forecastTomoCloudsValueLabel)
+        thermostatUI.add_widget(forecastTomoRainLabel)
+        thermostatUI.add_widget(forecastTomoRainValueLabel)
 
         layout = thermostatUI
 
@@ -1397,10 +1361,12 @@ class ThermostatApp(App):
 
             altCurLabel.pos = (390, 290)
             altWaterLabel.pos = (350, 200)
+            altWaterLabel.pos = (350, 400)
             altTimeLabel.pos = (335, 380)
 
             minUI.add_widget(altCurLabel)
             minUI.add_widget(altWaterLabel)
+            minUI.add_widget(altWaterValueLabel)
             minUI.add_widget(altTimeLabel)
             minScreen.add_widget(minUI)
 
@@ -1524,17 +1490,29 @@ class WebInterface(object):
         with thermostatLock:
             html = html.replace("@@version@@", str(THERMOSTAT_VERSION))
             html = html.replace("@@temp@@", str(setTemp))
+            html = html.replace("@@temperaturlabel@@", str(_("Temperature")))
             html = html.replace("@@current@@", str(currentTemp) + scaleUnits)
+            html = html.replace("@@domesticwaterlabel@@", str(currentWaterLabel.text).replace("[b]", "<b>").replace("[/b]", "</b>").replace("\n", "<br>").replace(" ","&nbsp;"))
             html = html.replace("@@domesticwater@@", str(domesticwater) + scaleUnits)
             html = html.replace("@@minTemp@@", str(minTemp))
             html = html.replace("@@maxTemp@@", str(maxTemp))
             html = html.replace("@@tempStep@@", str(tempStep))
 
-            status = statusLabel.text.replace("[b]", "<b>").replace("[/b]", "</b>").replace("\n", "<br>").replace(" ",
-                                                                                                                  "&nbsp;")
-            status = status.replace("[color=00ff00]", '<font color="red">').replace("[/color]", '</font>')
+            status_info = json.loads(get_status_info())
 
-            html = html.replace("@@status@@", status)
+            html = html.replace("@@heatlabel@@", _("Heat"))
+            html = html.replace("@@coollabel@@", _("Cool"))
+            html = html.replace("@@fanlabel@@", _("Fan"))
+            html = html.replace("@@schedlabel@@", _("Sched"))
+            html = html.replace("@@holdlabel@@", _("Hold"))
+            html = html.replace("@@applysettings@@", _("Apply settings"))
+            html = html.replace("@@editschedule@@", _("Edit schedule"))
+
+            html = html.replace("@@heat@@", str(status_info['heat']).replace("[b]", "<b>").replace("[/b]", "</b>").replace("\n", "<br>").replace(" ","&nbsp;").replace("[color=00ff00]", '<font color="green">').replace("[/color]", '</font>'))
+            html = html.replace("@@cool@@", str(status_info['cool']).replace("[b]", "<b>").replace("[/b]", "</b>").replace("\n", "<br>").replace(" ","&nbsp;").replace("[color=00ff00]", '<font color="green">').replace("[/color]", '</font>'))
+            html = html.replace("@@fan@@", str(status_info['fan']).replace("[b]", "<b>").replace("[/b]", "</b>").replace("\n", "<br>").replace(" ","&nbsp;").replace("[color=00ff00]", '<font color="green">').replace("[/color]", '</font>'))
+            html = html.replace("@@sched@@", str(status_info['sched']).replace("[b]", "<b>").replace("[/b]", "</b>").replace("\n", "<br>").replace(" ","&nbsp;").replace("[color=00ff00]", '<font color="green">').replace("[/color]", '</font>'))
+
             html = html.replace("@@dt@@", dateLabel.text.replace("[b]", "<b>").replace("[/b]",
                                                                                        "</b>") + ", " + timeLabel.text.replace(
                 "[b]", "<b>").replace("[/b]", "</b>"))
@@ -1710,64 +1688,6 @@ def startWebServer():
     cherrypy.quickstart(WebInterface(), '/', conf)
 
 
-class SensorService(threading.Thread):
-    def __init__(self):
-        super(SensorService, self).__init__()
-        self.daemon = True
-        self.mac_name = self.get_mac_name()
-        self.BROKER = '10.1.1.109'  # IP-Adresse des MQTT-Brokers
-        self.PORT = 1883  # Port des MQTT-Brokers
-        # MQTT-Topics festlegen
-        self.TOPIC_REPORT = f'command/DaikinWZ/control'
-
-    def get_mac_name(self):
-        mac_address = ':'.join(
-            ['{:02x}'.format((uuid.getnode() >> elements) & 0xff) for elements in range(0, 2 * 6, 2)][::-1]).upper()
-        return mac_address.replace(":", "").upper()
-
-    def run(self):
-
-        # MQTT Callbacks
-        def on_connect(client, userdata, flags, rc):
-            print(f"Connected with result code {rc}")
-
-        def on_disconnect(client, userdata, rc):
-            if rc != 0:
-                print("Unexpected disconnection. Reconnecting in 60 seconds...")
-                time.sleep(60)
-                client.reconnect()  # Erneut verbinden
-
-        client_id = f"Env-{self.mac_name}"
-        client = mqtt.Client(client_id)
-        client.on_connect = on_connect
-        client.on_disconnect = on_disconnect
-
-        while True:
-            try:
-                client.connect(self.BROKER, self.PORT, 60)
-                client.loop_start()
-
-                while True:
-                    # OneWire-Sensor
-                    sensor = W1ThermSensor()
-                    temperature = sensor.get_temperature()
-
-                    # Daten für info/BLE-Env/{mac_name}/report zusammenstellen
-                    data_report = {
-                        'env': round(temperature, 1),
-                        'target': [21.500, 24.000]
-                    }
-
-                    data_string = json.dumps(data_report, separators=(',', ':'))
-                    client.publish(self.TOPIC_REPORT, str(data_string))
-
-                    # Schlafen für 5 Sekunden
-                    time.sleep(5)
-            except Exception as e:
-                print(f"Fehler: {e}")
-                time.sleep(60)  # Warte 60 Sekunden und versuche es erneut
-
-
 ##############################################################################
 #                                                                            #
 #       Main                                                                 #
@@ -1786,19 +1706,8 @@ def main():
     schedThread.daemon = True
     schedThread.start()
 
-    # Start remote info
-    #remoteThread = threading.Thread(target=check_hotwater_temp)
-    #remoteThread.daemon = True
-    #remoteThread.start()
-
-    # Start SensorService
-    # sensor_service = SensorService()
-    # sensor_service.start()
-    # sensor_service.join()  # Warten, bis der Thread beendet ist
-
     # Start Thermostat UI/App
     ThermostatApp().run()
-
 
 if __name__ == '__main__':
     try:

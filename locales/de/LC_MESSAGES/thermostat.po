@@ -1,0 +1,109 @@
+# German translations for thermostat package
+# German messages for thermostat.
+# Copyright (C) 2023 THE thermostat'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the thermostat package.
+# chris <chris@ckvsoft.at>, 2023.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: thermostat 2\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2023-11-14 22:07+0100\n"
+"PO-Revision-Date: 2023-11-14 16:56+0100\n"
+"Last-Translator: chris <chris@ckvsoft.at>\n"
+"Language-Team: German <translation-team-de@lists.sourceforge.net>\n"
+"Language: de\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: thermostat.py:509 thermostat.py:532 thermostat.py:571 thermostat.py:599
+#: thermostat.py:1504
+msgid "Cool"
+msgstr "Kühlen"
+
+#: thermostat.py:510 thermostat.py:539 thermostat.py:569 thermostat.py:598
+#: thermostat.py:1503
+msgid "Heat"
+msgstr "Heizen"
+
+#: thermostat.py:511 thermostat.py:546 thermostat.py:600 thermostat.py:1505
+msgid "Fan"
+msgstr "Pumpe"
+
+#: thermostat.py:512 thermostat.py:553 thermostat.py:565 thermostat.py:1507
+msgid "Hold"
+msgstr "Halten"
+
+#: thermostat.py:574 thermostat.py:575 thermostat.py:576
+msgid "On"
+msgstr "Ein"
+
+#: thermostat.py:574 thermostat.py:575 thermostat.py:576
+msgid "Off"
+msgstr "Aus"
+
+#: thermostat.py:587
+msgid "Domestic water"
+msgstr "Warmwasser"
+
+#: thermostat.py:601 thermostat.py:1506
+msgid "Sched"
+msgstr "Plan"
+
+#: thermostat.py:686
+msgid "Temp"
+msgstr "Temp"
+
+#: thermostat.py:688 thermostat.py:701 thermostat.py:714
+msgid "Humidity"
+msgstr "Feuchtigkeit"
+
+#: thermostat.py:690 thermostat.py:703 thermostat.py:716
+msgid "Wind"
+msgstr "Wind"
+
+#: thermostat.py:692 thermostat.py:705 thermostat.py:718
+msgid "Clouds"
+msgstr "Wolken"
+
+#: thermostat.py:694
+msgid "Sun"
+msgstr "Sonne"
+
+#: thermostat.py:699 thermostat.py:712
+msgid "High"
+msgstr "Höchst"
+
+#: thermostat.py:786
+msgid "Low"
+msgstr "Tiefst"
+
+#: thermostat.py:794 thermostat.py:814
+msgid "Rain"
+msgstr "Regen"
+
+#: thermostat.py:797 thermostat.py:799 thermostat.py:817 thermostat.py:819
+msgid "Snow"
+msgstr "Schnee"
+
+#: thermostat.py:1252
+msgid "Today"
+msgstr "Heute"
+
+#: thermostat.py:1268
+msgid "Tomorow"
+msgstr "Morgen"
+
+#: thermostat.py:1493
+msgid "Temperature"
+msgstr "Temperatur"
+
+#: thermostat.py:1508
+msgid "Apply settings"
+msgstr "Einstellungen übernehmen"
+
+#: thermostat.py:1509
+msgid "Edit schedule"
+msgstr "Zeitplan bearbeiten"

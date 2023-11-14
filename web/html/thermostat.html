@@ -44,27 +44,27 @@
 			  $( "input[id=" + relatedId + "]" ).removeAttr( "checked" );
 		  }
 		});
-	  } 
+	  }
 	});
   });
   </script>
   <style>
 	label.button {
 	  	display:inline-block; padding:4px 10px; margin:0px 2px 2px 0px;
-	  	color:#666; text-align:center; font-size:13px; line-height:20px;
-	  	background-color:#FFF;  border: 1px solid #000; cursor:pointer;
+	  	color:#FFF; text-align:center; font-size:13px; line-height:20px;
+	  	background-color:#333;  border: 1px solid #FFF; cursor:pointer;
 	  	-webkit-border-radius:5px; -moz-border-radius:5px; border-radius:5px;
 	}
-	label.button.hover { box-shadow:2px 2px 2px #333; }
-	label.button.checked.red { color:#000; background-color:#FF0000;  }
-	label.button.checked.green { color:#000; background-color:#00FF00;  }
-	label.button.checked.blue { color:#000; background-color:#3399FF;  }
+	label.button.hover { box-shadow:2px 2px 2px #666; }
+	label.button.checked.red { color:#FFF; background-color:#FF0000;  }
+	label.button.checked.green { color:#FFF; background-color:#00FF00;  }
+	label.button.checked.blue { color:#FFF; background-color:#3399FF;  }
 	label.button span {
-	  	display:inline-block; width:10px; height:10px; margin-right:4px;	
+	  	display:inline-block; width:10px; height:10px; margin-right:4px;
 	}
   </style>
 </head>
-<body>
+<body style="background-color: #222; color: #FFF;">
 	<div align="center">
 		<form method="post" action="set">
 		  	<table width="360px">
@@ -75,34 +75,36 @@
 				<tr>
 					<td valign="top">
 						<br>
-						<p><b><span style="font-size:large">Warmwasser: @@domesticwater@@</span></b></p>
-						<p><b><span style="font-size:large">Temperatur: @@current@@</span></b></p>
-						<p>@@status@@</p>
+						<p><b><span style="font-size:large">@@domesticwaterlabel@@ @@domesticwater@@</span></b></p>
+						<p><b><span style="font-size:large">@@temperaturlabel@@: @@current@@</span></b></p>
+						<p>@@heatlabel@@: @@heat@@</p>
+						<p>@@coollabel@@: @@cool@@</p>
+						<p>@@fanlabel@@: @@fan@@</p>
+						<p>@@schedlabel@@: @@sched@@</p>
 						<br>
-						<br>
-						<p><input type="submit" value="Einstellungen vornehmen"></p>
-						<p><input type="submit" value="Zeitplan bearbeiten" onclick="window.location = 'schedule'; return false;" /></p>
+						<p><input type="submit" value="@@applysettings@@"></p>
+						<p><input type="submit" value="@@editschedule@@" onclick="window.location = 'schedule'; return false;" /></p>
 					</td>
 					<td align="center">
 						 <table width="100%">
 							<tr>
 								<td align="center" valign="center" width="33%">
-									<label for="heatButton" related="coolButton" class="red">Heizen</label>
+									<label for="heatButton" related="coolButton" class="red">@@heatlabel@@</label>
 									<input type="checkbox" id="heatButton" related="coolButton" name="heat" value="on" @@heatChecked@@/>
 								</td>
 								<td rowspan="3" align="center" width="33%">
 									<div id="slider-vertical" style="height:200px;"></div>
 								</td>
 								<td align="center" valign="center" width="33%">
-									<label for="holdButton" class="green">Halten</label>
+									<label for="holdButton" class="green">@@holdlabel@@</label>
 									<input type="checkbox" id="holdButton" name="hold" value="on" @@holdChecked@@/>
 								</td>
 							</tr>
 							<tr>
 								<td align="center" valign="center" width="33%">
-									<label for="coolButton" related="heatButton" class="blue">Kühlen</label>
+									<label for="coolButton" related="heatButton" class="blue">@@coollabel@@</label>
 									<input type="checkbox" id="coolButton" related="heatButton" name="cool" value="on" @@coolChecked@@/>
-								</td>	
+								</td>
 								<td rowspan="2" align="center" valign="top" width="33%">
 									<br>
 									<input type="text" id="temp" name="temp" readonly style="border:0; color:#ff0000; font-weight:bold; font-size:x-large; width: 2.3em;" size="4">
@@ -110,7 +112,7 @@
 							</tr>
 							<tr>
 								<td align="center" valign="center" width="33%">
-									<label for="fanButton" class="green" >Pumpe</label>
+									<label for="fanButton" class="green" >@@fanlabel@@</label>
 									<input type="checkbox" id="fanButton" name="fan" value="on" @@fanChecked@@/>
 								</td>
 							</tr>
