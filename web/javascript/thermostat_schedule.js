@@ -24,7 +24,7 @@ ScheduleEntry.prototype.draw = function( ctx, selected ) {
       ctx.font = 'bold 8pt Arial';
 	  ctx.fillStyle = "red";
   } else {
-	  ctx.fillStyle = "black";
+	  ctx.fillStyle = "white";
 	  ctx.font = '8pt Arial';
 	  ctx.drawImage(  this.ss.img, this.x, this.y  );
   }
@@ -313,12 +313,13 @@ ScheduleSlider.prototype.draw = function(  ) {
 ScheduleSlider.prototype.drawDecorators = function( ctx ) {
 	// Draw Day Label
 	ctx.font = 'bold 10pt Arial';
-	ctx.fillStyle = "black";
+	ctx.fillStyle = "white";
 	ctx.textAlign = "left";
     ctx.fillText( this.day, 5, 15 );
 
 	// Draw x-axis
-	ctx.strokeStyle = '#777777';
+	// ctx.strokeStyle = '#777777';
+	ctx.strokeStyle = '#cdcdcd';
 	ctx.beginPath();
     ctx.moveTo( this.margin.left, this.imgY + 25 );
     ctx.lineTo( this.margin.left + this.lenX, this.imgY + 25 );
@@ -329,7 +330,7 @@ ScheduleSlider.prototype.drawDecorators = function( ctx ) {
     var xInc =  this.lenX / 24;
     var xPos = this.margin.left;
 	ctx.font = '8pt Arial';
-	ctx.fillStyle = '#777777';
+	ctx.fillStyle = '#cdcdcd';
 	ctx.textAlign = "center";
 	for( hh = 0; hh < 24; hh++ ) {
 		txt = ( "00" + hh ).substr( -2 );
