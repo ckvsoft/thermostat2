@@ -657,9 +657,9 @@ def publish_faikin_mqtt_message():
             mqttc.publish("command/" + faikinName +"/control", json.dumps(data))
             log(LOG_LEVEL_INFO, CHILD_DEVICE_FAIKIN, MSG_SUBTYPE_FAIKIN + "/command/" + faikinName + "/control", str(json.dumps(data)), timestamp=False)
             if json.loads(payload)["autop"]:
-                mqttc.publish("command/" + faikinName + "/control/on", "")
+                mqttc.publish("command/" + faikinName + "/on", "")
             else:
-                mqttc.publish("command/" + faikinName + "/control/off", "")
+                mqttc.publish("command/" + faikinName + "/off", "")
 
     except Exception as e:
         log(LOG_LEVEL_ERROR, CHILD_DEVICE_FAIKIN, MSG_SUBTYPE_FAIKIN + "/" + faikinName, str(e), timestamp=False)
