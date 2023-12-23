@@ -632,11 +632,17 @@ def get_state_json():
         mode = "A"
         autop = False
 
+    targettemp = tempSlider.value
+    if currentTemp > targettemp:
+        targettemp -= tempHysteresis
+    if currentTemp < targettemp:
+        targettemp += tempHysteresis
+
     data = {
         "heat": heatControl.state == "down",
         "mode": mode,
         "autop": autop,
-        "autot": tempSlider.value
+        "autot": targettemp
     }
     return json.dumps(data)
 
@@ -647,24 +653,44 @@ def publish_faikin_mqtt_message():
         mqttc.publish(mqttPub_state, payload)
 
         if faikinEnabled:
-            mqttc.publish("command/" + faikinName, payload)
-            log(LOG_LEVEL_INFO, CHILD_DEVICE_FAIKIN, MSG_SUBTYPE_FAIKIN + "/command/" + faikinName, str(payload), timestamp=False)
+            targettemp = tempSlider.value
+            targettemp += tempHysteresis if currentTemp < targettemp else -tempHysteresis
+
+            power = True
+            mode = json.loads(payload)["mode"]
+
+            roundedTemp = round(currentTemp * 2) / 2
+            if mode == "H" and tempSlider.value + 4.0 < roundedTemp:
+                power = False
+            elif mode == "C" and tempSlider.value - 4.0 < roundedTemp:
+                power = False
+
+            if mode == "H" and tempSlider.value + 2.5 < roundedTemp:
+                mode = "F"
+
+            if mode == "C" and tempSlider.value - 2.5 < roundedTemp:
+                mode = "F"
+
+            powerful = (
+                currentTemp < tempSlider.value - tempHysteresis
+                if mode == "H"
+                else currentTemp > tempSlider.value + tempHysteresis
+                if mode == "C"
+                else False
+            )
 
             data = {
                 "env": currentTemp,
-                "target": [tempSlider.value - tempHysteresis, tempSlider.value + tempHysteresis]
+                "temp": targettemp,
+                "powerful": powerful,
+                "power": power,
+                "mode": mode
             }
-            mqttc.publish("command/" + faikinName +"/control", json.dumps(data))
-            log(LOG_LEVEL_INFO, CHILD_DEVICE_FAIKIN, MSG_SUBTYPE_FAIKIN + "/command/" + faikinName + "/control", str(json.dumps(data)), timestamp=False)
-            if json.loads(payload)["autop"]:
-                mqttc.publish("command/" + faikinName + "/on", "")
-            else:
-                mqttc.publish("command/" + faikinName + "/off", "")
+            mqtt_topic = f"command/{faikinName}/control"
+            mqttc.publish(mqtt_topic, json.dumps(data))
 
     except Exception as e:
         log(LOG_LEVEL_ERROR, CHILD_DEVICE_FAIKIN, MSG_SUBTYPE_FAIKIN + "/" + faikinName, str(e), timestamp=False)
-
-
 
 ##############################################################################
 #                                                                            #
