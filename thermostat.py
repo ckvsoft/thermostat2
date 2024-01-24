@@ -657,7 +657,7 @@ def publish_faikin_mqtt_message():
             targettemp = state_data["autot"]
             mode = state_data["mode"]
 
-            power = state_data["autp"]
+            power = state_data["autop"]
 
             roundedTemp = state_data["rounded"]
             targetdiff = state_data["diff"]
