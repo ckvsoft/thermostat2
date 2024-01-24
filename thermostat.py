@@ -633,36 +633,36 @@ def get_state_json():
         autop = False
 
     targettemp = tempSlider.value
-    if currentTemp > targettemp:
-        targettemp -= tempHysteresis
-    if currentTemp < targettemp:
-        targettemp += tempHysteresis
+    targettemp += tempHysteresis if currentTemp < targettemp else -tempHysteresis
+    roundedTemp = round(currentTemp * 2) / 2
+    targetdiff = targettemp - roundedTemp
 
     data = {
+        "rounded": roundedTemp,
+        "diff": targetdiff,
         "heat": heatControl.state == "down",
         "mode": mode,
         "autop": autop,
         "autot": targettemp
     }
-    return json.dumps(data)
-
+    return data
 
 def publish_faikin_mqtt_message():
     try:
-        payload = get_state_json()
+        state_data = get_state_json()
+        payload = json.dumps(state_data)
         mqttc.publish(mqttPub_state, payload)
 
         if faikinEnabled:
-            targettemp = tempSlider.value
-            targettemp += tempHysteresis if currentTemp < targettemp else -tempHysteresis
+            targettemp = state_data["autot"]
+            mode = state_data["mode"]
 
-            power = True
-            mode = json.loads(payload)["mode"]
+            power = state_data["autp"]
 
-            roundedTemp = round(currentTemp * 2) / 2
-            if mode == "H" and tempSlider.value + 4.0 < roundedTemp:
-                power = False
-            elif mode == "C" and tempSlider.value - 4.0 < roundedTemp:
+            roundedTemp = state_data["rounded"]
+            targetdiff = state_data["diff"]
+
+            if (mode == "H" and tempSlider.value + 4.0 < roundedTemp) or (mode == "C" and tempSlider.value - 4.0 < roundedTemp):
                 power = False
 
             if mode == "H" and tempSlider.value + 2.5 < roundedTemp:
