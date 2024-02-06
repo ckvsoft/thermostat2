@@ -190,6 +190,7 @@ THERMOSTAT_VERSION = "2.0.6"
 
 debug = False
 useTestSchedule = False
+prevTemp = None
 
 # Threading Locks
 thermostatLock = threading.RLock()
@@ -623,6 +624,7 @@ screenMgr = None
 ##############################################################################
 
 def get_state_json():
+    global prevTemp  # Um prevTemp innerhalb der Funktion verwenden und aktualisieren zu können
     autop = True
     if heatControl.state == "down":
         mode = "H"
@@ -637,6 +639,9 @@ def get_state_json():
     roundedTemp = round(currentTemp * 2) / 2
     targetdiff = targettemp - roundedTemp
 
+    # Hier wird prevTemp aktualisiert
+    prevTemp = currentTemp
+
     data = {
         "rounded": roundedTemp,
         "diff": targetdiff,
@@ -648,6 +653,7 @@ def get_state_json():
     return data
 
 def publish_faikin_mqtt_message():
+    global prevTemp  # Um prevTemp innerhalb der Funktion verwenden zu können
     try:
         state_data = get_state_json()
         payload = json.dumps(state_data)
@@ -659,18 +665,19 @@ def publish_faikin_mqtt_message():
 
             power = state_data["autop"]
 
-            roundedTemp = state_data["rounded"]
+            rounded_temp = state_data["rounded"]
             targetdiff = state_data["diff"]
 
-            if (mode == "H" and tempSlider.value + 4.0 < roundedTemp) or (mode == "C" and tempSlider.value - 4.0 < roundedTemp):
+            if (mode == "H" and tempSlider.value + 4.0 < rounded_temp) or (mode == "C" and tempSlider.value - 4.0 < rounded_temp):
                 power = False
 
-            if mode == "H" and tempSlider.value + 2.5 < roundedTemp:
+            if mode == "H" and tempSlider.value + 2.5 < rounded_temp:
                 mode = "F"
 
-            if mode == "C" and tempSlider.value - 2.5 < roundedTemp:
+            if mode == "C" and tempSlider.value - 2.5 < rounded_temp:
                 mode = "F"
 
+            # Hier wird powerful unter Verwendung von prevTemp berechnet
             powerful = (
                 currentTemp < tempSlider.value - tempHysteresis
                 if mode == "H"
