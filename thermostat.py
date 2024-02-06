@@ -653,7 +653,7 @@ def get_state_json():
     return data
 
 def publish_faikin_mqtt_message():
-    global prevTemp  # Um prevTemp innerhalb der Funktion verwenden zu können
+    global prevTemp
     try:
         state_data = get_state_json()
         payload = json.dumps(state_data)
@@ -662,11 +662,12 @@ def publish_faikin_mqtt_message():
         if faikinEnabled:
             targettemp = state_data["autot"]
             mode = state_data["mode"]
-
             power = state_data["autop"]
-
             rounded_temp = state_data["rounded"]
             targetdiff = state_data["diff"]
+
+            # Hier wird prevTemp verwendet, um die Änderung der Temperatur zu überwachen
+            delta_temp = currentTemp - prevTemp
 
             if (mode == "H" and tempSlider.value + 4.0 < rounded_temp) or (mode == "C" and tempSlider.value - 4.0 < rounded_temp):
                 power = False
@@ -677,11 +678,11 @@ def publish_faikin_mqtt_message():
             if mode == "C" and tempSlider.value - 2.5 < rounded_temp:
                 mode = "F"
 
-            # Hier wird powerful unter Verwendung von prevTemp berechnet
+            # Hier wird powerful unter Verwendung von delta_temp beeinflusst
             powerful = (
-                currentTemp < tempSlider.value - tempHysteresis
+                currentTemp < tempSlider.value - tempHysteresis and delta_temp < 0
                 if mode == "H"
-                else currentTemp > tempSlider.value + tempHysteresis
+                else currentTemp > tempSlider.value + tempHysteresis and delta_temp > 0
                 if mode == "C"
                 else False
             )
@@ -691,10 +692,13 @@ def publish_faikin_mqtt_message():
                 "temp": targettemp,
                 "powerful": powerful,
                 "power": power,
-                "mode": mode
+                "mode": mode,
             }
             mqtt_topic = f"command/{faikinName}/control"
             mqttc.publish(mqtt_topic, json.dumps(data))
+
+            # Aktualisieren von prevTemp für die nächste Iteration
+            prevTemp = currentTemp
 
     except Exception as e:
         log(LOG_LEVEL_ERROR, CHILD_DEVICE_FAIKIN, MSG_SUBTYPE_FAIKIN + "/" + faikinName, str(e), timestamp=False)
