@@ -672,17 +672,11 @@ def publish_faikin_mqtt_message():
             if (mode == "H" and tempSlider.value + 4.0 < rounded_temp) or (mode == "C" and tempSlider.value - 4.0 < rounded_temp):
                 power = False
 
-            #if mode == "H" and tempSlider.value + 2.5 < rounded_temp:
-            #    mode = "F"
-
-            #if mode == "C" and tempSlider.value - 2.5 < rounded_temp:
-            #    mode = "F"
-
             # Hier wird powerful unter Verwendung von delta_temp beeinflusst
             powerful = (
-                currentTemp < tempSlider.value - tempHysteresis and delta_temp < 0
+                currentTemp < tempSlider.value - tempHysteresis
                 if mode == "H"
-                else currentTemp > tempSlider.value + tempHysteresis and delta_temp > 0
+                else currentTemp > tempSlider.value + tempHysteresis
                 if mode == "C"
                 else False
             )
