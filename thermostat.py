@@ -213,6 +213,10 @@ domestic_key_value_pair = '' if not (settings.exists("domestic_water")) else set
 domestic_timeout_duration = 300 # 5 min
 domestic_last_message_time = 0
 
+# Faikin (Daikin AC) setup:
+faikinEnabled = 0 if not (settings.exists("faikin")) else settings.get("faikin")["enabled"]
+faikinName = 'GuestAC' if not (settings.exists("faikin")) else settings.get("faikin")["name"]
+outside_temp = 0.0
 # MQTT settings/setup
 
 def mqtt_on_connect(client, userdata, flags, rc):
@@ -232,11 +236,14 @@ def mqtt_on_connect(client, userdata, flags, rc):
         mqtt_subscriptions = [
             (mqttSub_restart, 0),  # Subscribe to restart commands
             (mqttSub_loglevel, 0),  # Subscribe to log level commands
-            (mqttSub_version, 0)  # Subscribe to version commands
+            (mqttSub_version, 0)# Subscribe to version commands
         ]
 
         if domestic_water_enabled:
             mqtt_subscriptions.append((domestic_water_topic, 0))
+
+        if faikinEnabled:
+            mqtt_subscriptions.append((mqttSub_faikin, 0))
 
         mqtt_subscriptions.append((mqttSub_state, 0))
         src = client.subscribe(mqtt_subscriptions)
@@ -260,6 +267,7 @@ if mqttAvailable:
     mqttSub_restart = str(mqttPubPrefix + "/" + mqttClientID + "/command/restart")
     mqttSub_loglevel = str(mqttPubPrefix + "/" + mqttClientID + "/command/loglevel")
     mqttSub_state = str(mqttPubPrefix + "/" + mqttClientID + "/command/state")
+    mqttSub_faikin = str("Faikin/" + faikinName)
 
     mqttPub_state = str(mqttPubPrefix + "/" + mqttClientID + "/state/status")
     mqttPub_fanstate = str(mqttPubPrefix + "/" + mqttClientID + "/state/fan")
@@ -448,10 +456,6 @@ try:
 except W1ThermSensor:
     tempSensor = None
 
-# Faikin (Daikin AC) setup:
-faikinEnabled = 0 if not (settings.exists("faikin")) else settings.get("faikin")["enabled"]
-faikinName = 'GuestAC' if not (settings.exists("faikin")) else settings.get("faikin")["name"]
-
 # PIR (Motion Sensor) setup:
 pirEnabled = 0 if not (settings.exists("pir")) else settings.get("pir")["pirEnabled"]
 pirPin = 5 if not (settings.exists("pir")) else settings.get("pir")["pirPin"]
@@ -623,13 +627,32 @@ screenMgr = None
 #                                                                            #
 ##############################################################################
 
+def get_faikin_status(message):
+    global outside_temp
+    payload = message.payload.decode('utf-8')
+    data = json.loads(payload)
+    # Den Wert von "outside" auslesen
+    outside_temp = data['outside']
+
+    print(f"Empfangene Nachricht: {payload}")
+
 def get_state_json():
-    global prevTemp  # Um prevTemp innerhalb der Funktion verwenden und aktualisieren zu können
+    global prevTemp, outside_temp  # Um prevTemp innerhalb der Funktion verwenden und aktualisieren zu können
+
     autop = True
+    summer_temp = 14 if not (settings.exists("faikin")) else settings.get("faikin")["summer_temp"]
+    if summer_temp < outside_temp:
+        heat_state = False
+        autop = False
+    else:
+        heat_state = heatControl.state == "down"
+
     if heatControl.state == "down":
         mode = "H"
     elif coolControl.state == "down":
         mode = "C"
+        if not heat_state:
+            autop = True
     else:
         mode = "A"
         autop = False
@@ -645,7 +668,7 @@ def get_state_json():
     data = {
         "rounded": roundedTemp,
         "diff": targetdiff,
-        "heat": heatControl.state == "down",
+        "heat": heat_state,
         "mode": mode,
         "autop": autop,
         "autot": targettemp
@@ -664,8 +687,8 @@ def publish_faikin_mqtt_message():
             mode = state_data["mode"]
             power = state_data["autop"]
             rounded_temp = state_data["rounded"]
-            targetdiff = state_data["diff"]
 
+            targetdiff = state_data["diff"]
             # Hier wird prevTemp verwendet, um die Änderung der Temperatur zu überwachen
             delta_temp = currentTemp - prevTemp
 
@@ -1112,7 +1135,6 @@ def getVersion(message):
     print(f"Empfangszeitpunkt: {message.timestamp}")
     log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_VERSION, THERMOSTAT_VERSION)
 
-
 def restart(message):
     payload = message.payload.decode('utf-8')
 
@@ -1186,6 +1208,9 @@ if mqttEnabled:
     mqttc.message_callback_add(mqttSub_state, lambda client, userdata, message: get_status_info())
     if domestic_water_enabled:
         mqttc.message_callback_add(domestic_water_topic, lambda client, userdata, message: set_domestic_water(message))
+
+    if faikinEnabled:
+        mqttc.message_callback_add(mqttSub_faikin, lambda client, userdata, message: get_faikin_status(message))
 
     # Make sure we can reach the mqtt server by pinging it
     pingCount = 0
