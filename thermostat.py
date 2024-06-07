@@ -184,7 +184,7 @@ MSG_SUBTYPE_FAIKIN = "faikin"
 #                                                                            #
 ##############################################################################
 
-THERMOSTAT_VERSION = "2.1.0"
+THERMOSTAT_VERSION = "2.1.1"
 
 # Debug settings
 
@@ -692,7 +692,7 @@ def publish_faikin_mqtt_message():
             # Hier wird prevTemp verwendet, um die Änderung der Temperatur zu überwachen
             delta_temp = currentTemp - prevTemp
 
-            if (mode == "H" and tempSlider.value + 4.0 < rounded_temp) or (mode == "C" and tempSlider.value - 4.0 < rounded_temp):
+            if (mode == "H" and tempSlider.value + 4.0 < rounded_temp) or (mode == "C" and tempSlider.value - 4.0 > rounded_temp):
                 power = False
 
             # Hier wird powerful unter Verwendung von delta_temp beeinflusst
