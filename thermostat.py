@@ -716,28 +716,30 @@ def publish_faikin_mqtt_message():
                     else:
                         fan = "1"  # Mild decrease, lowest fan speed
                 else:  # Current temperature is lower than target temperature
-                    # Fan speed increases as the current temperature gets farther from the target
-                    if targettemp - currentTemp >= 3:  # Larger difference, highest fan speed
+                    temp_diff = targettemp - currentTemp
+                    if temp_diff >= 3:  # Larger difference, highest fan speed
                         fan = "5"
-                    elif targettemp - currentTemp >= 2:  # Moderate difference
+                    elif temp_diff >= 2:  # Moderate difference
                         fan = "4"
-                    else:  # Small difference, medium fan speed
+                    else:  # Small difference
                         fan = "3"
 
             elif mode == "C":  # Kühlmodus
                 if targettemp == currentTemp:
                     fan = "3"
                 elif targettemp < currentTemp:  # Current temperature is higher than target temperature
-                    # Fan speed increases as the temperature rises further above the target
-                    if delta_temp > 1:  # Significant increase in temperature
-                        fan = "4"
-                    else:
-                        fan = "5"  # Mild increase, highest fan speed
-                else:  # Current temperature is lower than target temperature
-                    # Fan speed increases as the current temperature approaches the target
-                    if targettemp - currentTemp >= 3:  # Larger difference, highest fan speed
+                    temp_diff = currentTemp - targettemp
+                    if temp_diff >= 3:  # Larger difference, highest fan speed
                         fan = "5"
-                    elif targettemp - currentTemp >= 2:  # Moderate difference
+                    elif temp_diff >= 2:  # Moderate difference
+                        fan = "4"
+                    else:  # Small difference
+                        fan = "3"
+                else:  # Current temperature is lower than target temperature
+                    temp_diff = targettemp - currentTemp
+                    if temp_diff >= 3:  # Larger difference, highest fan speed
+                        fan = "5"
+                    elif temp_diff >= 2:  # Moderate difference
                         fan = "4"
                     else:  # Small difference
                         fan = "3"
