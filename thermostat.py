@@ -186,7 +186,7 @@ MSG_SUBTYPE_FAIKIN = "faikin"
 #                                                                            #
 ##############################################################################
 
-THERMOSTAT_VERSION = "2.2.0"
+THERMOSTAT_VERSION = "2.2.1"
 
 # Debug settings
 
@@ -712,10 +712,12 @@ def publish_faikin_mqtt_message():
 #                else False
 #            )
 
+            tolerance = 0.2  # Erlaubte Schwankung
+
             powerful = False
             fan = "A"
             if mode == "H":  # Heizmodus
-                if targettemp == currentTemp:
+                if abs(currentTemp - targettemp) > tolerance:
                     fan = "3"  # Ziel erreicht, normale Geschwindigkeit
                 elif targettemp < currentTemp:  # Aktuelle Temperatur höher als Zieltemperatur
                     # Wenn die Temperatur über einen längeren Zeitraum nicht fällt
@@ -730,7 +732,7 @@ def publish_faikin_mqtt_message():
                         fan = "4"  # Mittelgeschwindigkeit für eine langsamere Annäherung an die Zieltemperatur
 
             elif mode == "C":  # Kühlmodus
-                if targettemp == currentTemp:
+                if abs(currentTemp - targettemp) > tolerance:
                     fan = "3"  # Ziel erreicht, normale Geschwindigkeit
                 elif targettemp < currentTemp:  # Aktuelle Temperatur höher als Zieltemperatur
                     if abs(currentTemp - targettemp) > 2:  # Signifikante Abweichung zur Zieltemperatur
