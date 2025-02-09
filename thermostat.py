@@ -659,7 +659,8 @@ def get_state_json():
         autop = False
 
     targettemp = tempSlider.value
-    targettemp += tempHysteresis if currentTemp < targettemp else -tempHysteresis
+    if currentTemp != targettemp:
+        targettemp += tempHysteresis if currentTemp < targettemp else -tempHysteresis
     roundedTemp = round(currentTemp * 2) / 2
     targetdiff = targettemp - roundedTemp
 
