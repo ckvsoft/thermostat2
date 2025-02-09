@@ -45,6 +45,7 @@ import urllib.request
 import uuid
 
 import kivy
+from kivy.core.window import Window
 
 ##############################################################################
 #                                                                            #
@@ -192,6 +193,8 @@ THERMOSTAT_VERSION = "2.2.0"
 debug = False
 useTestSchedule = False
 prevTemp = None
+
+Window.show_cursor = False
 
 # Threading Locks
 thermostatLock = threading.RLock()
