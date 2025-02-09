@@ -1218,7 +1218,7 @@ def setMqttFanCommand(state):
         mqttc.publish(mqttPub_fanstate, state)
 
 if mqttEnabled:
-    mqttc = mqtt.Client(client_id = mqttClientID, protocol=mqtt.MQTTv5)
+    mqttc = mqtt.Client(client_id = mqttClientID, protocol={mqtt.MQTTv5})
     mqttc.on_connect = mqtt_on_connect
 
     mqttc.message_callback_add(mqttSub_restart, lambda client, userdata, message: restart(message) )
