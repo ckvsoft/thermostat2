@@ -709,40 +709,32 @@ def publish_faikin_mqtt_message():
             fan = "A"
             if mode == "H":  # Heizmodus
                 if targettemp == currentTemp:
-                    fan = "3"
-                elif targettemp < currentTemp:  # Current temperature is higher than target temperature
-                    if delta_temp < -1:  # Significant decrease in temperature, slower fan speed
-                        fan = "2"
+                    fan = "3"  # Ziel erreicht, normale Geschwindigkeit
+                elif targettemp < currentTemp:  # Aktuelle Temperatur höher als Zieltemperatur
+                    # Wenn die Temperatur über einen längeren Zeitraum nicht fällt
+                    if delta_temp < -1:  # Wenn der Temperaturabfall signifikant ist
+                        fan = "2"  # Geschwindigkeit reduzieren, da die Temperatur schon abfällt
                     else:
-                        fan = "1"  # Mild decrease, lowest fan speed
-                else:  # Current temperature is lower than target temperature
-                    temp_diff = targettemp - currentTemp
-                    if temp_diff >= 3:  # Larger difference, highest fan speed
-                        fan = "5"
-                    elif temp_diff >= 2:  # Moderate difference
-                        fan = "4"
-                    else:  # Small difference
-                        fan = "3"
+                        fan = "1"  # Niedrigste Geschwindigkeit, da der Temperaturabfall mild ist
+                else:  # Aktuelle Temperatur unter Zieltemperatur
+                    if abs(currentTemp - targettemp) > 2:  # Wenn der Unterschied zur Zieltemperatur groß ist
+                        fan = "5"  # Höchste Geschwindigkeit, um schneller zu heizen
+                    else:
+                        fan = "4"  # Mittelgeschwindigkeit für eine langsamere Annäherung an die Zieltemperatur
 
             elif mode == "C":  # Kühlmodus
                 if targettemp == currentTemp:
-                    fan = "3"
-                elif targettemp < currentTemp:  # Current temperature is higher than target temperature
-                    temp_diff = currentTemp - targettemp
-                    if temp_diff >= 3:  # Larger difference, highest fan speed
-                        fan = "5"
-                    elif temp_diff >= 2:  # Moderate difference
-                        fan = "4"
-                    else:  # Small difference
-                        fan = "3"
-                else:  # Current temperature is lower than target temperature
-                    temp_diff = targettemp - currentTemp
-                    if temp_diff >= 3:  # Larger difference, highest fan speed
-                        fan = "5"
-                    elif temp_diff >= 2:  # Moderate difference
-                        fan = "4"
-                    else:  # Small difference
-                        fan = "3"
+                    fan = "3"  # Ziel erreicht, normale Geschwindigkeit
+                elif targettemp < currentTemp:  # Aktuelle Temperatur höher als Zieltemperatur
+                    if abs(currentTemp - targettemp) > 2:  # Signifikante Abweichung zur Zieltemperatur
+                        fan = "4"  # Höchste Geschwindigkeit, um schnell zu kühlen
+                    else:
+                        fan = "5"  # Höchste Geschwindigkeit für sanftes Kühlen
+                else:  # Aktuelle Temperatur unter Zieltemperatur
+                    if abs(currentTemp - targettemp) > 2:  # Wenn der Unterschied zur Zieltemperatur groß ist
+                        fan = "2"  # Niedrigere Geschwindigkeit, um die Temperatur langsam zu senken
+                    else:
+                        fan = "1"  # Minimale Geschwindigkeit für feines Kühlen
 
             data = {
                 "env": currentTemp,
