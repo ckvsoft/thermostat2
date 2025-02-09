@@ -52,7 +52,7 @@ import kivy
 #                                                                            #
 ##############################################################################
 
-kivy.require('1.1.0')  # replace with your current kivy version !
+kivy.require('2.1.0')  # replace with your current kivy version !
 
 from kivy.app import App
 from kivy.uix.togglebutton import ToggleButton
@@ -96,7 +96,8 @@ except ImportError:
 
 try:
     from w1thermsensor import W1ThermSensor, Unit
-except ImportError:
+except (ImportError, OSError, RuntimeError, Exception) as e:
+    print(f"Fehler beim Laden von w1thermsensor: {e}")
     from FakeRPi.w1thermsensor import W1ThermSensor, Unit
 
 ##############################################################################
