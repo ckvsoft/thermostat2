@@ -706,21 +706,21 @@ def publish_faikin_mqtt_message():
 #            )
 
             powerful = False
-            fan = 0
+            fan = "A"
             if mode == "H":  # Heizmodus
                 if targettemp == currentTemp:
-                    fan = "2"
-                elif targettemp < currentTemp:
-                    fan = "1"
-                else:
                     fan = "3"
+                elif targettemp < currentTemp:
+                    fan = "2"
+                else:
+                    fan = "4"
             elif mode == "C":  # Kühlmodus
                 if targettemp == currentTemp:
-                    fan = "2"
-                elif targettemp < currentTemp:
                     fan = "3"
+                elif targettemp < currentTemp:
+                    fan = "4"
                 else:
-                    fan = "1"
+                    fan = "2"
 
             data = {
                 "env": currentTemp,
