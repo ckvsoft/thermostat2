@@ -696,13 +696,30 @@ def publish_faikin_mqtt_message():
                 power = False
 
             # Hier wird powerful unter Verwendung von delta_temp beeinflusst
-            powerful = (
-                currentTemp < tempSlider.value - tempHysteresis
-                if mode == "H"
-                else currentTemp > tempSlider.value + tempHysteresis
-                if mode == "C"
-                else False
-            )
+#            powerful = (
+#                currentTemp < tempSlider.value - tempHysteresis
+#                if mode == "H"
+#                else currentTemp > tempSlider.value + tempHysteresis
+#                if mode == "C"
+#                else False
+#            )
+
+            powerful = False
+            fan = 0
+            if mode == "H":  # Heizmodus
+                if targettemp == currentTemp:
+                    fan = "2"
+                elif targettemp < currentTemp:
+                    fan = "1"
+                else:
+                    fan = "3"
+            elif mode == "C":  # Kühlmodus
+                if targettemp == currentTemp:
+                    fan = "2"
+                elif targettemp < currentTemp:
+                    fan = "3"
+                else:
+                    fan = "1"
 
             data = {
                 "env": currentTemp,
@@ -710,6 +727,7 @@ def publish_faikin_mqtt_message():
                 "powerful": powerful,
                 "power": power,
                 "mode": mode,
+                "fan": fan,
             }
             mqtt_topic = f"command/{faikinName}/control"
             mqttc.publish(mqtt_topic, json.dumps(data))
