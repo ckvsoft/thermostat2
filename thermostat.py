@@ -659,8 +659,11 @@ def get_state_json():
         autop = False
 
     targettemp = tempSlider.value
-    if currentTemp != targettemp:
+    tolerance = 0.2  # Erlaubte Schwankung
+
+    if abs(currentTemp - targettemp) > tolerance:
         targettemp += tempHysteresis if currentTemp < targettemp else -tempHysteresis
+
     roundedTemp = round(currentTemp * 2) / 2
     targetdiff = targettemp - roundedTemp
 
