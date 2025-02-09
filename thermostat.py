@@ -710,30 +710,37 @@ def publish_faikin_mqtt_message():
             if mode == "H":  # Heizmodus
                 if targettemp == currentTemp:
                     fan = "3"
-                elif targettemp < currentTemp:
-                    if delta_temp > 1:  # If temperature decrease is large, set fan to 2 (lower speed)
+                elif targettemp < currentTemp:  # Current temperature is higher than target temperature
+                    if delta_temp < -1:  # Significant decrease in temperature, slower fan speed
                         fan = "2"
                     else:
-                        fan = "1"  # If cooling is mild, set fan to 1 (lowest speed)
-                else:
-                    if delta_temp > 1:  # If temperature increase is large, set fan to 4 (higher speed)
+                        fan = "1"  # Mild decrease, lowest fan speed
+                else:  # Current temperature is lower than target temperature
+                    # Fan speed increases as the current temperature gets farther from the target
+                    if targettemp - currentTemp >= 3:  # Larger difference, highest fan speed
+                        fan = "5"
+                    elif targettemp - currentTemp >= 2:  # Moderate difference
                         fan = "4"
-                    else:
-                        fan = "5"  # If heating is mild, set fan to 5 (highest speed)
+                    else:  # Small difference, medium fan speed
+                        fan = "3"
 
             elif mode == "C":  # Kühlmodus
                 if targettemp == currentTemp:
                     fan = "3"
-                elif targettemp < currentTemp:
-                    if delta_temp > 1:  # If temperature decrease is significant, set fan to 4 (higher speed)
+                elif targettemp < currentTemp:  # Current temperature is higher than target temperature
+                    # Fan speed increases as the temperature rises further above the target
+                    if delta_temp > 1:  # Significant increase in temperature
                         fan = "4"
                     else:
-                        fan = "5"  # If cooling is mild, set fan to 5 (highest speed)
-                else:
-                    if delta_temp > 1:  # If temperature increase is significant, set fan to 2 (lower speed)
-                        fan = "2"
-                    else:
-                        fan = "1"  # If cooling is mild, set fan to 1 (lowest speed)
+                        fan = "5"  # Mild increase, highest fan speed
+                else:  # Current temperature is lower than target temperature
+                    # Fan speed increases as the current temperature approaches the target
+                    if targettemp - currentTemp >= 3:  # Larger difference, highest fan speed
+                        fan = "5"
+                    elif targettemp - currentTemp >= 2:  # Moderate difference
+                        fan = "4"
+                    else:  # Small difference
+                        fan = "3"
 
             data = {
                 "env": currentTemp,
