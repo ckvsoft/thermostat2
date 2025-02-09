@@ -220,7 +220,7 @@ faikinName = 'GuestAC' if not (settings.exists("faikin")) else settings.get("fai
 outside_temp = 0.0
 # MQTT settings/setup
 
-def mqtt_on_connect(client, userdata, flags, rc):
+def mqtt_on_connect(client, userdata, flags, rc, test=None):
     global mqttReconnect
 
     print("MQTT Connected with result code: " + str(rc))
