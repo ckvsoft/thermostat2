@@ -711,16 +711,29 @@ def publish_faikin_mqtt_message():
                 if targettemp == currentTemp:
                     fan = "3"
                 elif targettemp < currentTemp:
-                    fan = "2"
+                    if delta_temp > 1:  # If temperature decrease is large, set fan to 2 (lower speed)
+                        fan = "2"
+                    else:
+                        fan = "1"  # If cooling is mild, set fan to 1 (lowest speed)
                 else:
-                    fan = "4"
+                    if delta_temp > 1:  # If temperature increase is large, set fan to 4 (higher speed)
+                        fan = "4"
+                    else:
+                        fan = "5"  # If heating is mild, set fan to 5 (highest speed)
+
             elif mode == "C":  # Kühlmodus
                 if targettemp == currentTemp:
                     fan = "3"
                 elif targettemp < currentTemp:
-                    fan = "4"
+                    if delta_temp > 1:  # If temperature decrease is significant, set fan to 4 (higher speed)
+                        fan = "4"
+                    else:
+                        fan = "5"  # If cooling is mild, set fan to 5 (highest speed)
                 else:
-                    fan = "2"
+                    if delta_temp > 1:  # If temperature increase is significant, set fan to 2 (lower speed)
+                        fan = "2"
+                    else:
+                        fan = "1"  # If cooling is mild, set fan to 1 (lowest speed)
 
             data = {
                 "env": currentTemp,
