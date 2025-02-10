@@ -741,11 +741,11 @@ def publish_faikin_mqtt_message():
                         fan = "4"  # Schnell kühlen
                     else:
                         fan = "5"  # Sanftes Kühlen
-                elif temp_diff < -fan_hysteresis:  # Temperatur zu niedrig
+                elif temp_diff < -fan_hysteresis:  # Temperatur unter Zielwert (zu kalt)
                     if abs(temp_diff) > 2:
-                        fan = "2"  # Langsame Reduzierung
+                        fan = "1"  # Starke Unterschreitung -> minimale Geschwindigkeit
                     else:
-                        fan = "1"  # Minimale Lüftergeschwindigkeit
+                        fan = "2"  # Leichte Unterschreitung -> langsam reduzieren
 
             data = {
                 "env": currentTemp,
