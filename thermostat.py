@@ -712,38 +712,40 @@ def publish_faikin_mqtt_message():
 #                else False
 #            )
 
-            tolerance = 0.2  # Erlaubte Schwankung
+            tolerance = 0.2  # Erlaubte Temperaturschwankung
+            fan_hysteresis = 0.5  # Verhindert zu schnelle Lüfteränderungen bei kleinen Schwankungen
 
             powerful = False
-            fan = "A"
+            fan = "A"  # Automatischer Modus als Standard
+
             if mode == "H":  # Heizmodus
-                if abs(currentTemp - targettemp) > tolerance:
-                    fan = "3"  # Ziel erreicht, normale Geschwindigkeit
-                elif targettemp < currentTemp:  # Aktuelle Temperatur höher als Zieltemperatur
-                    # Wenn die Temperatur über einen längeren Zeitraum nicht fällt
-                    if delta_temp < -1:  # Wenn der Temperaturabfall signifikant ist
-                        fan = "2"  # Geschwindigkeit reduzieren, da die Temperatur schon abfällt
+                temp_diff = currentTemp - targettemp
+
+                if abs(temp_diff) <= tolerance:
+                    fan = "3"  # Zielbereich erreicht -> mittlere Lüftergeschwindigkeit
+                elif temp_diff > fan_hysteresis:  # Temperatur zu hoch
+                    fan = "2"  # Langsame Reduzierung
+                elif temp_diff < -fan_hysteresis:  # Temperatur zu niedrig
+                    if abs(temp_diff) > 2:
+                        fan = "5"  # Schnell aufheizen
                     else:
-                        fan = "1"  # Niedrigste Geschwindigkeit, da der Temperaturabfall mild ist
-                else:  # Aktuelle Temperatur unter Zieltemperatur
-                    if abs(currentTemp - targettemp) > 2:  # Wenn der Unterschied zur Zieltemperatur groß ist
-                        fan = "5"  # Höchste Geschwindigkeit, um schneller zu heizen
-                    else:
-                        fan = "4"  # Mittelgeschwindigkeit für eine langsamere Annäherung an die Zieltemperatur
+                        fan = "4"  # Mittlere Geschwindigkeit
 
             elif mode == "C":  # Kühlmodus
-                if abs(currentTemp - targettemp) > tolerance:
-                    fan = "3"  # Ziel erreicht, normale Geschwindigkeit
-                elif targettemp < currentTemp:  # Aktuelle Temperatur höher als Zieltemperatur
-                    if abs(currentTemp - targettemp) > 2:  # Signifikante Abweichung zur Zieltemperatur
-                        fan = "4"  # Höchste Geschwindigkeit, um schnell zu kühlen
+                temp_diff = targettemp - currentTemp
+
+                if abs(temp_diff) <= tolerance:
+                    fan = "3"  # Zielbereich erreicht -> mittlere Lüftergeschwindigkeit
+                elif temp_diff > fan_hysteresis:  # Temperatur zu hoch
+                    if abs(temp_diff) > 2:
+                        fan = "4"  # Schnell kühlen
                     else:
-                        fan = "5"  # Höchste Geschwindigkeit für sanftes Kühlen
-                else:  # Aktuelle Temperatur unter Zieltemperatur
-                    if abs(currentTemp - targettemp) > 2:  # Wenn der Unterschied zur Zieltemperatur groß ist
-                        fan = "2"  # Niedrigere Geschwindigkeit, um die Temperatur langsam zu senken
+                        fan = "5"  # Sanftes Kühlen
+                elif temp_diff < -fan_hysteresis:  # Temperatur zu niedrig
+                    if abs(temp_diff) > 2:
+                        fan = "2"  # Langsame Reduzierung
                     else:
-                        fan = "1"  # Minimale Geschwindigkeit für feines Kühlen
+                        fan = "1"  # Minimale Lüftergeschwindigkeit
 
             data = {
                 "env": currentTemp,
