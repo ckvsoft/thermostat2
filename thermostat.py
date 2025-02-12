@@ -717,38 +717,49 @@ def publish_faikin_mqtt_message():
 
             powerful = False
             fan = "A"  # Automatischer Modus als Standard
+            demand = 100
 
             if mode == "H":  # Heizmodus
                 temp_diff = currentTemp - targettemp
 
                 if abs(temp_diff) <= tolerance:
                     fan = "3"  # Zielbereich erreicht -> mittlere Lüftergeschwindigkeit
+                    demand = 65
                 elif temp_diff > fan_hysteresis:  # Temperatur zu hoch
                     if abs(temp_diff) > 4:  # Sehr hohe Abweichung
                         fan = "1"  # Sehr hohe Temperaturabweichung -> minimale Geschwindigkeit (niedrigste Heizleistung)
+                        demand = 30
                     else:
                         fan = "2"
+                        demand = 50
                 elif temp_diff < -fan_hysteresis:  # Temperatur zu niedrig
                     if abs(temp_diff) > 2:
                         fan = "5"  # Schnell aufheizen
+                        demand = 100
                     else:
                         fan = "4"
+                        demand = 80
 
             elif mode == "C":  # Kühlmodus
                 temp_diff = targettemp - currentTemp
 
                 if abs(temp_diff) <= tolerance:
                     fan = "3"  # Zielbereich erreicht -> mittlere Lüftergeschwindigkeit
+                    demand = 65
                 elif temp_diff > fan_hysteresis:  # Temperatur zu hoch
                     if abs(temp_diff) > 2:
                         fan = "4"  # Schnell kühlen
+                        demand = 80
                     else:
                         fan = "5"  # noch mehr Kühlen
+                        demand = 100
                 elif temp_diff < -fan_hysteresis:  # Temperatur unter Zielwert (zu kalt)
                     if abs(temp_diff) > 2:
                         fan = "1"  # Starke Unterschreitung -> minimale Geschwindigkeit
+                        demand = 30
                     else:
                         fan = "2"  # Leichte Unterschreitung
+                        demand = 50
 
             data = {
                 "env": currentTemp,
@@ -757,6 +768,7 @@ def publish_faikin_mqtt_message():
                 "power": power,
                 "mode": mode,
                 "fan": fan,
+                "demand": demand,
             }
             mqtt_topic = f"command/{faikinName}/control"
             mqttc.publish(mqtt_topic, json.dumps(data))
