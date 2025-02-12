@@ -726,7 +726,7 @@ def publish_faikin_mqtt_message():
                     fan = "3"  # Zielbereich erreicht -> mittlere Lüftergeschwindigkeit
                     demand = 65
                 elif temp_diff > fan_hysteresis:  # Temperatur zu hoch
-                    if abs(temp_diff) > 4:  # Sehr hohe Abweichung
+                    if abs(temp_diff) > 3:  # Sehr hohe Abweichung
                         fan = "1"  # Sehr hohe Temperaturabweichung -> minimale Geschwindigkeit (niedrigste Heizleistung)
                         demand = 30
                     else:
