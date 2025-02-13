@@ -195,6 +195,7 @@ THERMOSTAT_VERSION = "2.2.1"
 debug = False
 useTestSchedule = False
 prevTemp = None
+prevTargetTemp = None
 fan_hysteresis_timer = HysteresisTimer(interval=10)
 
 Window.show_cursor = False
@@ -644,7 +645,7 @@ def get_faikin_status(message):
     print(f"Empfangene Nachricht: {payload}")
 
 def get_state_json():
-    global prevTemp, outside_temp  # Um prevTemp innerhalb der Funktion verwenden und aktualisieren zu können
+    global outside_temp  # Um prevTemp innerhalb der Funktion verwenden und aktualisieren zu können
 
     autop = True
     summer_temp = 14 if not (settings.exists("faikin")) else settings.get("faikin")["summer_temp"]
@@ -665,19 +666,11 @@ def get_state_json():
         autop = False
 
     targettemp = tempSlider.value
-    tolerance = 0.2  # Erlaubte Schwankung
-
-    if abs(currentTemp - targettemp) > tolerance:
-        targettemp += tempHysteresis if currentTemp < targettemp else -tempHysteresis
-
-    roundedTemp = round(currentTemp * 2) / 2
-    targetdiff = targettemp - roundedTemp
-
-    # Hier wird prevTemp aktualisiert
-    prevTemp = currentTemp
+    roundedtemp = round(currentTemp * 2) / 2
+    targetdiff = targettemp - roundedtemp
 
     data = {
-        "rounded": roundedTemp,
+        "rounded": roundedtemp,
         "diff": targetdiff,
         "heat": heat_state,
         "mode": mode,
@@ -687,7 +680,7 @@ def get_state_json():
     return data
 
 def publish_faikin_mqtt_message():
-    global prevTemp
+    global prevTemp, prevTargetTemp
     try:
         state_data = get_state_json()
         payload = json.dumps(state_data)
@@ -699,11 +692,22 @@ def publish_faikin_mqtt_message():
             power = state_data["autop"]
             rounded_temp = state_data["rounded"]
 
+            tolerance = 0.2  # Erlaubte Temperaturschwankung
+            fan_hysteresis = 0.5  # Verhindert zu schnelle Lüfteränderungen bei kleinen Schwankungen
+
             targetdiff = state_data["diff"]
             # Hier wird prevTemp verwendet, um die Änderung der Temperatur zu überwachen
             delta_temp = currentTemp - prevTemp
 
-            if not fan_hysteresis_timer.check() and delta_temp != 0: return
+            if prevTargetTemp is None or prevTargetTemp != targettemp:
+                # Zieltemperatur wurde geändert → SOFORT reagieren!
+                fan_hysteresis_timer.last_trigger_time = 0  # Timer sofort freigeben
+            elif abs(delta_temp) < tolerance:
+                # Wenn Temperatur nur leicht schwankt, Timer zurücksetzen und nichts ändern
+                fan_hysteresis_timer.last_trigger_time = time.monotonic()
+                return  # Keine Änderungen senden, nur aktuelle Werte behalten
+
+            prevTargetTemp = targettemp  # Zieltemperatur speichern
 
             if (mode == "H" and tempSlider.value + 4.0 < rounded_temp) or (mode == "C" and tempSlider.value - 4.0 > rounded_temp):
                 power = False
@@ -716,9 +720,6 @@ def publish_faikin_mqtt_message():
 #                if mode == "C"
 #                else False
 #            )
-
-            tolerance = 0.2  # Erlaubte Temperaturschwankung
-            fan_hysteresis = 0.5  # Verhindert zu schnelle Lüfteränderungen bei kleinen Schwankungen
 
             powerful = False
             fan = "A"  # Automatischer Modus als Standard
