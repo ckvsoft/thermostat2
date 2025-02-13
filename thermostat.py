@@ -693,76 +693,56 @@ def publish_faikin_mqtt_message():
             rounded_temp = state_data["rounded"]
 
             tolerance = 0.2  # Erlaubte Temperaturschwankung
-            fan_hysteresis = 0.5  # Verhindert zu schnelle Lüfteränderungen bei kleinen Schwankungen
+            fan_hysteresis = 0.5  # Verhindert zu schnelle Lüfteränderungen
 
-            targetdiff = state_data["diff"]
-            # Hier wird prevTemp verwendet, um die Änderung der Temperatur zu überwachen
-            delta_temp = currentTemp - prevTemp
+            # Falls prevTemp oder currentTemp None ist, Initialisierung
+            if prevTemp is None:
+                prevTemp = currentTemp  # Erster Wert setzen, um Fehler zu vermeiden
 
+            if currentTemp is None:
+                return  # Ohne gültige aktuelle Temperatur kann keine Regelung stattfinden
+
+            delta_temp = currentTemp - prevTemp  # Differenz berechnen
+
+            # **Wichtig**: Zieltemperatur-Änderung hat immer Vorrang!
             if prevTargetTemp is None or prevTargetTemp != targettemp:
-                prevTargetTemp = targettemp  # Neue Zieltemperatur merken
-                fan_hysteresis_timer.last_trigger_time = 0  # Timer zurücksetzen, um SOFORT zu reagieren
+                prevTargetTemp = targettemp  # Neue Zieltemperatur speichern
+                fan_hysteresis_timer.last_trigger_time = 0  # Timer zurücksetzen, um sofort zu reagieren
             # Kleine Temperaturschwankungen → Keine Regeländerung
             elif abs(delta_temp) < tolerance:
                 return  # **MQTT-Message bleibt gleich, aber keine Steuerungsänderung!**
 
+            # **Regelung bei zu großer Abweichung**
             if (mode == "H" and tempSlider.value + 4.0 < rounded_temp) or (mode == "C" and tempSlider.value - 4.0 > rounded_temp):
                 power = False
 
-            # Hier wird powerful unter Verwendung von delta_temp beeinflusst
-#            powerful = (
-#                currentTemp < tempSlider.value - tempHysteresis
-#                if mode == "H"
-#                else currentTemp > tempSlider.value + tempHysteresis
-#                if mode == "C"
-#                else False
-#            )
-
-            powerful = False
+            powerful = False  # Standardmäßig aus
             fan = "A"  # Automatischer Modus als Standard
             demand = 100
 
             if mode == "H":  # Heizmodus
                 temp_diff = currentTemp - targettemp
-
                 if abs(temp_diff) <= tolerance:
-                    fan = "3"  # Zielbereich erreicht -> mittlere Lüftergeschwindigkeit
+                    fan = "3"
                     demand = 65
-                elif temp_diff > fan_hysteresis:  # Temperatur zu hoch
-                    if abs(temp_diff) > 3:  # Sehr hohe Abweichung
-                        fan = "1"  # Sehr hohe Temperaturabweichung -> minimale Geschwindigkeit (niedrigste Heizleistung)
-                        demand = 30
-                    else:
-                        fan = "2"
-                        demand = 50
-                elif temp_diff < -fan_hysteresis:  # Temperatur zu niedrig
-                    if abs(temp_diff) > 2:
-                        fan = "5"  # Schnell aufheizen
-                        demand = 100
-                    else:
-                        fan = "4"
-                        demand = 80
+                elif temp_diff > fan_hysteresis:
+                    fan = "1" if abs(temp_diff) > 3 else "2"
+                    demand = 30 if abs(temp_diff) > 3 else 50
+                elif temp_diff < -fan_hysteresis:
+                    fan = "5" if abs(temp_diff) > 2 else "4"
+                    demand = 100 if abs(temp_diff) > 2 else 80
 
             elif mode == "C":  # Kühlmodus
                 temp_diff = targettemp - currentTemp
-
                 if abs(temp_diff) <= tolerance:
-                    fan = "3"  # Zielbereich erreicht -> mittlere Lüftergeschwindigkeit
+                    fan = "3"
                     demand = 65
-                elif temp_diff > fan_hysteresis:  # Temperatur zu hoch
-                    if abs(temp_diff) > 2:
-                        fan = "4"  # Schnell kühlen
-                        demand = 80
-                    else:
-                        fan = "5"  # noch mehr Kühlen
-                        demand = 100
-                elif temp_diff < -fan_hysteresis:  # Temperatur unter Zielwert (zu kalt)
-                    if abs(temp_diff) > 2:
-                        fan = "1"  # Starke Unterschreitung -> minimale Geschwindigkeit
-                        demand = 30
-                    else:
-                        fan = "2"  # Leichte Unterschreitung
-                        demand = 50
+                elif temp_diff > fan_hysteresis:
+                    fan = "4" if abs(temp_diff) > 2 else "5"
+                    demand = 80 if abs(temp_diff) > 2 else 100
+                elif temp_diff < -fan_hysteresis:
+                    fan = "1" if abs(temp_diff) > 2 else "2"
+                    demand = 30 if abs(temp_diff) > 2 else 50
 
             data = {
                 "env": currentTemp,
@@ -776,11 +756,12 @@ def publish_faikin_mqtt_message():
             mqtt_topic = f"command/{faikinName}/control"
             mqttc.publish(mqtt_topic, json.dumps(data))
 
-            # Aktualisieren von prevTemp für die nächste Iteration
+            # **Jetzt erst prevTemp aktualisieren!**
             prevTemp = currentTemp
 
     except Exception as e:
         log(LOG_LEVEL_ERROR, CHILD_DEVICE_FAIKIN, MSG_SUBTYPE_FAIKIN + "/" + faikinName, str(e), timestamp=False)
+
 
 ##############################################################################
 #                                                                            #
