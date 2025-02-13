@@ -712,7 +712,7 @@ def publish_faikin_mqtt_message():
             # Kleine Temperaturschwankungen → Keine Regeländerung
             elif abs(delta_temp) < tolerance:
                 mqtt_topic = f"command/{faikinName}/control"
-                mqttc.publish(mqtt_topic, json.dumps(payload))
+                mqttc.publish(mqtt_topic, payload)
                 return  # **MQTT-Message bleibt gleich, aber keine Steuerungsänderung!**
 
             # **Regelung bei zu großer Abweichung**
