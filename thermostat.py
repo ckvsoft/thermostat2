@@ -670,6 +670,7 @@ def get_state_json():
     targetdiff = targettemp - roundedtemp
 
     data = {
+        "env": currentTemp,
         "rounded": roundedtemp,
         "diff": targetdiff,
         "heat": heat_state,
@@ -710,6 +711,8 @@ def publish_faikin_mqtt_message():
                 fan_hysteresis_timer.last_trigger_time = 0  # Timer zurücksetzen, um sofort zu reagieren
             # Kleine Temperaturschwankungen → Keine Regeländerung
             elif abs(delta_temp) < tolerance:
+                mqtt_topic = f"command/{faikinName}/control"
+                mqttc.publish(mqtt_topic, json.dumps(payload))
                 return  # **MQTT-Message bleibt gleich, aber keine Steuerungsänderung!**
 
             # **Regelung bei zu großer Abweichung**
