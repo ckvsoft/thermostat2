@@ -700,14 +700,11 @@ def publish_faikin_mqtt_message():
             delta_temp = currentTemp - prevTemp
 
             if prevTargetTemp is None or prevTargetTemp != targettemp:
-                # Zieltemperatur wurde geändert → SOFORT reagieren!
-                fan_hysteresis_timer.last_trigger_time = 0  # Timer sofort freigeben
+                prevTargetTemp = targettemp  # Neue Zieltemperatur merken
+                fan_hysteresis_timer.last_trigger_time = 0  # Timer zurücksetzen, um SOFORT zu reagieren
+            # Kleine Temperaturschwankungen → Keine Regeländerung
             elif abs(delta_temp) < tolerance:
-                # Wenn Temperatur nur leicht schwankt, Timer zurücksetzen und nichts ändern
-                fan_hysteresis_timer.last_trigger_time = time.monotonic()
-                return  # Keine Änderungen senden, nur aktuelle Werte behalten
-
-            prevTargetTemp = targettemp  # Zieltemperatur speichern
+                return  # **MQTT-Message bleibt gleich, aber keine Steuerungsänderung!**
 
             if (mode == "H" and tempSlider.value + 4.0 < rounded_temp) or (mode == "C" and tempSlider.value - 4.0 > rounded_temp):
                 power = False
