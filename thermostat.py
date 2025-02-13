@@ -44,6 +44,8 @@ import time
 import urllib.request
 import uuid
 
+from hysteresistimer import HysteresisTimer
+
 import kivy
 from kivy.core.window import Window
 
@@ -193,6 +195,7 @@ THERMOSTAT_VERSION = "2.2.1"
 debug = False
 useTestSchedule = False
 prevTemp = None
+fan_hysteresis_timer = HysteresisTimer(interval=10)
 
 Window.show_cursor = False
 
@@ -699,6 +702,8 @@ def publish_faikin_mqtt_message():
             targetdiff = state_data["diff"]
             # Hier wird prevTemp verwendet, um die Änderung der Temperatur zu überwachen
             delta_temp = currentTemp - prevTemp
+
+            if not fan_hysteresis_timer.check() and delta_temp != 0: return
 
             if (mode == "H" and tempSlider.value + 4.0 < rounded_temp) or (mode == "C" and tempSlider.value - 4.0 > rounded_temp):
                 power = False
