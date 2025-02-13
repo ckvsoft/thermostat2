@@ -727,22 +727,22 @@ def publish_faikin_mqtt_message():
                 temp_diff = currentTemp - targettemp
                 if abs(temp_diff) <= tolerance:
                     fan = "3"
-                    demand = 65
+                    demand = 70
                 elif temp_diff > fan_hysteresis:
                     fan = "1" if abs(temp_diff) > 3 else "2"
                     demand = 30 if abs(temp_diff) > 3 else 50
                 elif temp_diff < -fan_hysteresis:
                     fan = "5" if abs(temp_diff) > 2 else "4"
-                    demand = 100 if abs(temp_diff) > 2 else 80
+                    demand = 100 if abs(temp_diff) > 2 else 95
 
             elif mode == "C":  # Kühlmodus
                 temp_diff = targettemp - currentTemp
                 if abs(temp_diff) <= tolerance:
                     fan = "3"
-                    demand = 65
+                    demand = 70
                 elif temp_diff > fan_hysteresis:
                     fan = "4" if abs(temp_diff) > 2 else "5"
-                    demand = 80 if abs(temp_diff) > 2 else 100
+                    demand = 95 if abs(temp_diff) > 2 else 100
                 elif temp_diff < -fan_hysteresis:
                     fan = "1" if abs(temp_diff) > 2 else "2"
                     demand = 30 if abs(temp_diff) > 2 else 50
