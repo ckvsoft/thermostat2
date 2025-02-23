@@ -227,6 +227,12 @@ faikinName = 'GuestAC' if not (settings.exists("faikin")) else settings.get("fai
 outside_temp = 0.0
 # MQTT settings/setup
 
+def on_disconnect(client, userdata, rc):
+    if rc != 0:
+        print(f"Unexpected MQTT Broker disconnection! {rc}")
+        log(LOG_LEVEL_INFO, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT, "Unexpected MQTT Broker disconnection: " + rc)
+
+
 def mqtt_on_connect(client, userdata, flags, rc, properties=None):
     global mqttReconnect
 
@@ -1247,6 +1253,7 @@ def setMqttFanCommand(state):
 if mqttEnabled:
     mqttc = mqtt.Client(client_id = mqttClientID, protocol=mqtt.MQTTv5)
     mqttc.on_connect = mqtt_on_connect
+    mqttc.on_disconnect = on_disconnect
 
     mqttc.message_callback_add(mqttSub_restart, lambda client, userdata, message: restart(message) )
     mqttc.message_callback_add(mqttSub_loglevel, lambda client, userdata, message: setLogLevel(message))
