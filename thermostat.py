@@ -41,6 +41,7 @@ import socket
 import sys
 import threading
 import time
+import traceback
 import urllib.request
 import uuid
 
@@ -769,7 +770,9 @@ def publish_faikin_mqtt_message():
             prevTemp = currentTemp
 
     except Exception as e:
-        log(LOG_LEVEL_ERROR, CHILD_DEVICE_FAIKIN, MSG_SUBTYPE_FAIKIN + "/" + faikinName, str(e), timestamp=False)
+        error_message = str(e)
+        error_trace = traceback.format_exc()  # Erhalte den vollständigen Traceback
+        log(LOG_LEVEL_ERROR, CHILD_DEVICE_FAIKIN, MSG_SUBTYPE_FAIKIN + "/" + faikinName, error_message + "\n" + error_trace, timestamp=False)
 
 
 ##############################################################################
