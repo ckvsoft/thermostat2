@@ -656,6 +656,10 @@ def get_state_json():
 
     autop = True
     summer_temp = 14 if not (settings.exists("faikin")) else settings.get("faikin")["summer_temp"]
+
+    if isinstance(outside_temp, list):
+        outside_temp = sum(outside_temp) / len(outside_temp)
+
     if summer_temp < outside_temp:
         heat_state = False
         autop = False
