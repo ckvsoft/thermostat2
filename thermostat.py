@@ -731,8 +731,8 @@ def publish_faikin_mqtt_message():
                 power = False
 
             powerful = False  # Standardmäßig aus
-            fan = "A"  # Automatischer Modus als Standard
-            demand = 100
+            fan = "3"  # Automatischer Modus als Standard
+            demand = 70
 
             if mode == "H":  # Heizmodus
                 temp_diff = currentTemp - targettemp
