@@ -231,7 +231,7 @@ outside_temp = 0.0
 def on_disconnect(client, userdata, rc, properties):
     if rc != 0:
         print(f"Unexpected MQTT Broker disconnection! {rc}")
-        log(LOG_LEVEL_INFO, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT, "Unexpected MQTT Broker disconnection: " + rc)
+        log(LOG_LEVEL_INFO, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT, f"Unexpected MQTT Broker disconnection: {rc}")
 
 
 def mqtt_on_connect(client, userdata, flags, rc, properties=None):
