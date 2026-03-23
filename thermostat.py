@@ -146,7 +146,7 @@ CHILD_DEVICE_TEMP = "temperatureSensor"
 CHILD_DEVICE_SCREEN = "screen"
 CHILD_DEVICE_SCHEDULER = "scheduler"
 CHILD_DEVICE_WEBSERVER = "webserver"
-CHILD_DEVICE_FAIKIN = "faikin"
+CHILD_DEVICE_FAIKIN = "faikout"
 
 CHILD_DEVICES = [
     CHILD_DEVICE_NODE,
@@ -181,7 +181,7 @@ MSG_SUBTYPE_TEMPERATURE = "temperature"
 MSG_SUBTYPE_FORECAST = "forecast"
 MSG_SUBTYPE_CUSTOM = "custom"
 MSG_SUBTYPE_TEXT = "text"
-MSG_SUBTYPE_FAIKIN = "faikin"
+MSG_SUBTYPE_FAIKIN = "faikout"
 
 ##############################################################################
 #                                                                            #
@@ -189,7 +189,7 @@ MSG_SUBTYPE_FAIKIN = "faikin"
 #                                                                            #
 ##############################################################################
 
-THERMOSTAT_VERSION = "2.2.1"
+THERMOSTAT_VERSION = "2.3.1"
 
 # Debug settings
 
@@ -281,7 +281,7 @@ if mqttAvailable:
     mqttSub_restart = str(mqttPubPrefix + "/" + mqttClientID + "/command/restart")
     mqttSub_loglevel = str(mqttPubPrefix + "/" + mqttClientID + "/command/loglevel")
     mqttSub_state = str(mqttPubPrefix + "/" + mqttClientID + "/command/state")
-    mqttSub_faikin = str("Faikin/" + faikinName)
+    mqttSub_faikin = str("Faikout/" + faikinName)
 
     mqttPub_state = str(mqttPubPrefix + "/" + mqttClientID + "/state/status")
     mqttPub_fanstate = str(mqttPubPrefix + "/" + mqttClientID + "/state/fan")
