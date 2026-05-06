@@ -56,7 +56,7 @@ from kivy.core.window import Window
 #                                                                            #
 ##############################################################################
 
-kivy.require('2.1.0')  # replace with your current kivy version !
+kivy.require('2.3.0')  # mit requirements.txt konsistent
 
 from kivy.app import App
 from kivy.uix.togglebutton import ToggleButton
@@ -175,8 +175,8 @@ CHILD_DEVICE_SUFFIX_UICONTROL = "Control"
 MSG_SUBTYPE_NAME = "sketchName"
 MSG_SUBTYPE_VERSION = "sketchVersion"
 MSG_SUBTYPE_BINARY_STATUS = "binaryStatus"
-MSG_SUBTYPE_TRIPPED = "armed"
-MSG_SUBTYPE_ARMED = "tripped"
+MSG_SUBTYPE_TRIPPED = "tripped"
+MSG_SUBTYPE_ARMED = "armed"
 MSG_SUBTYPE_TEMPERATURE = "temperature"
 MSG_SUBTYPE_FORECAST = "forecast"
 MSG_SUBTYPE_CUSTOM = "custom"
@@ -220,7 +220,7 @@ domestic_water_enabled = False if not (settings.exists("domestic_water")) else s
 domestic_water_topic = '' if not (settings.exists("domestic_water")) else settings.get("domestic_water")["topic"]
 domestic_key_value_pair = '' if not (settings.exists("domestic_water")) else settings.get("domestic_water")["key_value_pair"]
 domestic_timeout_duration = 300 # 5 min
-domestic_last_message_time = 0
+domestic_last_message_time = time.time()
 
 # Faikin (Daikin AC) setup:
 faikinEnabled = 0 if not (settings.exists("faikin")) else settings.get("faikin")["enabled"]
@@ -343,9 +343,6 @@ def log_print(level, child_device, msg_subtype, msg, msg_type=MSG_TYPE_SET, time
 loggingChannel = "none" if not (settings.exists("logging")) else settings.get("logging")["channel"]
 loggingLevel = "state" if not (settings.exists("logging")) else settings.get("logging")["level"]
 
-loggingChannel = "none" if not (settings.exists("logging")) else settings.get("logging")["channel"]
-loggingLevel = "state" if not (settings.exists("logging")) else settings.get("logging")["level"]
-
 if loggingChannel == 'none':
     log = log_dummy
 elif loggingChannel == 'mqtt' and mqttEnabled:
@@ -367,8 +364,7 @@ log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_VERSION, THERMOSTAT_VERSION,
 
 # send presentations for all other child "sensors"
 
-for i in range(len(CHILD_DEVICES)):
-    child = CHILD_DEVICES[i]
+for child in CHILD_DEVICES:
     if child != CHILD_DEVICE_NODE:
         log(LOG_LEVEL_STATE, child, child, "", msg_type=MSG_TYPE_PRESENTATION)
 
@@ -391,6 +387,7 @@ currentFlowTemp = 0.0
 
 priorCorrected = -100.0
 setTemp = 22.0 if not (state.exists("state")) else state.get("state")["setTemp"]
+_last_persisted_state = None  # Cache für State-Write-Optimierung (SD-Karten-Schoner)
 
 tempHysteresis = 0.5 if not (settings.exists("thermostat")) else settings.get("thermostat")["tempHysteresis"]
 
@@ -430,13 +427,13 @@ log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/temperatu
 
 # Temperature calibration settings:
 
-elevation = 0 if not (settings.exists("thermostat")) else settings.get("calibration")["elevation"]
+elevation = 0 if not (settings.exists("calibration")) else settings.get("calibration")["elevation"]
 boilingPoint = (100.0 - 0.003353 * elevation) if tempScale == "metric" else (212.0 - 0.00184 * elevation)
 freezingPoint = 0.01 if tempScale == "metric" else 32.018
 referenceRange = boilingPoint - freezingPoint
 
-boilingMeasured = settings.get("calibration")["boilingMeasured"]
-freezingMeasured = settings.get("calibration")["freezingMeasured"]
+boilingMeasured = 100.0 if not (settings.exists("calibration")) else settings.get("calibration")["boilingMeasured"]
+freezingMeasured = 0.0 if not (settings.exists("calibration")) else settings.get("calibration")["freezingMeasured"]
 measuredRange = boilingMeasured - freezingMeasured
 
 log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/calibration/elevation", str(elevation),
@@ -467,7 +464,8 @@ log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/UISlider/
 
 try:
     tempSensor = W1ThermSensor()
-except W1ThermSensor:
+except Exception as e:
+    log(LOG_LEVEL_ERROR, CHILD_DEVICE_TEMP, MSG_SUBTYPE_TEXT, f"Sensor init failed: {e}")
     tempSensor = None
 
 # PIR (Motion Sensor) setup:
@@ -507,10 +505,6 @@ GPIO.output(fanPin, GPIO.HIGH)
 if pirEnabled:
     GPIO.setup(pirPin, GPIO.IN)
 
-CHILD_DEVICE_HEAT = "heat"
-CHILD_DEVICE_COOL = "cool"
-CHILD_DEVICE_FAN = "fan"
-
 log(LOG_LEVEL_INFO, CHILD_DEVICE_COOL, MSG_SUBTYPE_BINARY_STATUS, str(coolPin), timestamp=False)
 log(LOG_LEVEL_INFO, CHILD_DEVICE_HEAT, MSG_SUBTYPE_BINARY_STATUS, str(heatPin), timestamp=False)
 log(LOG_LEVEL_INFO, CHILD_DEVICE_FAN, MSG_SUBTYPE_BINARY_STATUS, str(fanPin), timestamp=False)
@@ -544,8 +538,7 @@ def setControlState(control, state):
             log(LOG_LEVEL_STATE, controlLabel + CHILD_DEVICE_SUFFIX_UICONTROL, MSG_SUBTYPE_BINARY_STATUS,
                 "0" if state == "normal" else "1")
 
-        except Exception as e:
-            import traceback
+        except Exception:
             traceback.print_exc()
 
 coolControl = ToggleButton(text="[b]" + _("Cool") + "[/b]",
@@ -643,21 +636,41 @@ screenMgr = None
 
 def get_faikin_status(message):
     global outside_temp
-    payload = message.payload.decode('utf-8')
-    data = json.loads(payload)
-    # Den Wert von "outside" auslesen
-    outside_temp = data['outside']
+    try:
+        payload = message.payload
+        if isinstance(payload, bytes):
+            payload = payload.decode('utf-8')
+        data = json.loads(payload)
 
-    print(f"Empfangene Nachricht: {payload}")
+        # "outside" kann fehlen, None, einzelner Wert oder Liste sein
+        val = data.get('outside')
+        if val is None:
+            return
+        if isinstance(val, list):
+            numeric = [v for v in val if isinstance(v, (int, float))]
+            if not numeric:
+                return
+            val = sum(numeric) / len(numeric)
+        if isinstance(val, (int, float)):
+            outside_temp = float(val)
+
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError, TypeError) as e:
+        log(LOG_LEVEL_ERROR, CHILD_DEVICE_FAIKIN,
+            MSG_SUBTYPE_FAIKIN + "/" + faikinName,
+            f"Bad faikin payload: {e}")
 
 def get_state_json():
-    global outside_temp  # Um prevTemp innerhalb der Funktion verwenden und aktualisieren zu können
+    global outside_temp
 
     autop = True
     summer_temp = 14 if not (settings.exists("faikin")) else settings.get("faikin")["summer_temp"]
 
+    # Defensive: outside_temp könnte aus altem Code als Liste vorliegen
     if isinstance(outside_temp, list):
-        outside_temp = sum(outside_temp) / len(outside_temp)
+        numeric = [v for v in outside_temp if isinstance(v, (int, float))]
+        outside_temp = sum(numeric) / len(numeric) if numeric else 0.0
+    if not isinstance(outside_temp, (int, float)):
+        outside_temp = 0.0
 
     if summer_temp < outside_temp:
         heat_state = False
@@ -692,90 +705,96 @@ def get_state_json():
 
 def publish_faikin_mqtt_message():
     global prevTemp, prevTargetTemp
+
+    # Snapshot des aktuellen Wertes — schützt gegen Änderung während der Funktion
+    cur_temp = currentTemp
+
     try:
         state_data = get_state_json()
         payload = json.dumps(state_data)
         mqttc.publish(mqttPub_state, payload)
 
-        if faikinEnabled:
-            targettemp = state_data["autot"]
-            mode = state_data["mode"]
-            power = state_data["autop"]
-            rounded_temp = state_data["rounded"]
+        if not faikinEnabled:
+            return
 
-            tolerance = 0.2  # Erlaubte Temperaturschwankung
-            fan_hysteresis = 0.5  # Verhindert zu schnelle Lüfteränderungen
+        targettemp = state_data["autot"]
+        mode = state_data["mode"]
+        power = state_data["autop"]
+        rounded_temp = state_data["rounded"]
 
-            # Falls prevTemp oder currentTemp None ist, Initialisierung
-            if prevTemp is None:
-                prevTemp = currentTemp  # Erster Wert setzen, um Fehler zu vermeiden
+        tolerance = 0.2       # Erlaubte Temperaturschwankung
+        fan_hysteresis = 0.5  # Verhindert zu schnelle Lüfteränderungen
 
-            if currentTemp is None:
-                return  # Ohne gültige aktuelle Temperatur kann keine Regelung stattfinden
+        # Falls prevTemp oder cur_temp None ist, Initialisierung
+        if cur_temp is None:
+            return  # Ohne gültige aktuelle Temperatur kann keine Regelung stattfinden
+        if prevTemp is None:
+            prevTemp = cur_temp
 
-            delta_temp = currentTemp - prevTemp  # Differenz berechnen
+        delta_temp = cur_temp - prevTemp
 
-            # **Wichtig**: Zieltemperatur-Änderung hat immer Vorrang!
-            if prevTargetTemp is None or prevTargetTemp != targettemp:
-                prevTargetTemp = targettemp  # Neue Zieltemperatur speichern
-                fan_hysteresis_timer.last_trigger_time = 0  # Timer zurücksetzen, um sofort zu reagieren
-            # Kleine Temperaturschwankungen → Keine Regeländerung
-            elif abs(delta_temp) < tolerance:
-                mqtt_topic = f"command/{faikinName}/control"
-                mqttc.publish(mqtt_topic, payload)
-                return  # **MQTT-Message bleibt gleich, aber keine Steuerungsänderung!**
-
-            # **Regelung bei zu großer Abweichung**
-            if (mode == "H" and tempSlider.value + 4.0 < rounded_temp) or (mode == "C" and tempSlider.value - 4.0 > rounded_temp):
-                power = False
-
-            powerful = False  # Standardmäßig aus
-            fan = "3"  # Automatischer Modus als Standard
-            demand = 70
-
-            if mode == "H":  # Heizmodus
-                temp_diff = currentTemp - targettemp
-                if abs(temp_diff) <= tolerance:
-                    fan = "3"
-                    demand = 70
-                elif temp_diff > fan_hysteresis:
-                    fan = "1" if abs(temp_diff) > 3 else "2"
-                    demand = 30 if abs(temp_diff) > 3 else 50
-                elif temp_diff < -fan_hysteresis:
-                    fan = "5" if abs(temp_diff) > 2 else "4"
-                    demand = 100 if abs(temp_diff) > 2 else 95
-
-            elif mode == "C":  # Kühlmodus
-                temp_diff = targettemp - currentTemp
-                if abs(temp_diff) <= tolerance:
-                    fan = "3"
-                    demand = 70
-                elif temp_diff > fan_hysteresis:
-                    fan = "4" if abs(temp_diff) > 2 else "5"
-                    demand = 95 if abs(temp_diff) > 2 else 100
-                elif temp_diff < -fan_hysteresis:
-                    fan = "1" if abs(temp_diff) > 2 else "2"
-                    demand = 30 if abs(temp_diff) > 2 else 50
-
-            data = {
-                "env": currentTemp,
-                "temp": targettemp,
-                "powerful": powerful,
-                "power": power,
-                "mode": mode,
-                "fan": fan,
-                "demand": demand,
-            }
+        # Zieltemperatur-Änderung hat immer Vorrang
+        if prevTargetTemp is None or prevTargetTemp != targettemp:
+            prevTargetTemp = targettemp
+            fan_hysteresis_timer.last_trigger_time = 0
+        # Kleine Temperaturschwankungen → Keine Regeländerung
+        elif abs(delta_temp) < tolerance:
             mqtt_topic = f"command/{faikinName}/control"
-            mqttc.publish(mqtt_topic, json.dumps(data))
+            mqttc.publish(mqtt_topic, payload)
+            return  # MQTT-Message bleibt gleich, aber keine Steuerungsänderung
 
-            # **Jetzt erst prevTemp aktualisieren!**
-            prevTemp = currentTemp
+        # Regelung bei zu großer Abweichung
+        if (mode == "H" and tempSlider.value + 4.0 < rounded_temp) or \
+           (mode == "C" and tempSlider.value - 4.0 > rounded_temp):
+            power = False
+
+        powerful = False
+        fan = "3"      # Automatischer Modus als Standard
+        demand = 70
+
+        if mode == "H":  # Heizmodus
+            temp_diff = cur_temp - targettemp
+            if abs(temp_diff) <= tolerance:
+                fan, demand = "3", 70
+            elif temp_diff > fan_hysteresis:
+                fan = "1" if abs(temp_diff) > 3 else "2"
+                demand = 30 if abs(temp_diff) > 3 else 50
+            elif temp_diff < -fan_hysteresis:
+                fan = "5" if abs(temp_diff) > 2 else "4"
+                demand = 100 if abs(temp_diff) > 2 else 95
+
+        elif mode == "C":  # Kühlmodus
+            temp_diff = targettemp - cur_temp
+            if abs(temp_diff) <= tolerance:
+                fan, demand = "3", 70
+            elif temp_diff > fan_hysteresis:
+                fan = "4" if abs(temp_diff) > 2 else "5"
+                demand = 95 if abs(temp_diff) > 2 else 100
+            elif temp_diff < -fan_hysteresis:
+                fan = "1" if abs(temp_diff) > 2 else "2"
+                demand = 30 if abs(temp_diff) > 2 else 50
+
+        data = {
+            "env": cur_temp,
+            "temp": targettemp,
+            "powerful": powerful,
+            "power": power,
+            "mode": mode,
+            "fan": fan,
+            "demand": demand,
+        }
+        mqtt_topic = f"command/{faikinName}/control"
+        mqttc.publish(mqtt_topic, json.dumps(data))
 
     except Exception as e:
-        error_message = str(e)
-        error_trace = traceback.format_exc()  # Erhalte den vollständigen Traceback
-        log(LOG_LEVEL_ERROR, CHILD_DEVICE_FAIKIN, MSG_SUBTYPE_FAIKIN + "/" + faikinName, error_message + "\n" + error_trace, timestamp=False)
+        error_trace = traceback.format_exc()
+        log(LOG_LEVEL_ERROR, CHILD_DEVICE_FAIKIN,
+            MSG_SUBTYPE_FAIKIN + "/" + faikinName,
+            f"{e}\n{error_trace}", timestamp=False)
+    finally:
+        # prevTemp IMMER aktualisieren, auch bei early-return oder Exception
+        if cur_temp is not None:
+            prevTemp = cur_temp
 
 
 ##############################################################################
@@ -837,7 +856,8 @@ forecastTomoRainLabel = Label(text="", size_hint=(None, None), font_size='15sp',
 forecastTomoRainValueLabel = Label(text="", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
 
 def get_weather(url):
-    return json.loads(urllib.request.urlopen(url, None, weatherURLTimeout).read())
+    with urllib.request.urlopen(url, None, weatherURLTimeout) as response:
+        return json.loads(response.read())
 
 def get_cardinal_direction(heading):
     directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW", "N"]
@@ -869,12 +889,12 @@ def display_current_weather(dt):
             weatherSummaryLabel.text = "N/A"
             weatherTempValueLabel.text = "N/A"
             weatherHumidityValueLabel.text = "N/A"
-            weatherWindValueLabel.pos.text = "N/A"
-            weatherCloudsValueLabel.pos.text = "N/A"
-            weatherSunValueLabel.pos.text = "N/A"
+            weatherWindValueLabel.text = "N/A"
+            weatherCloudsValueLabel.text = "N/A"
+            weatherSunValueLabel.text = "N/A"
 
             log(LOG_LEVEL_ERROR, CHILD_DEVICE_WEATHER_CURR, MSG_SUBTYPE_TEXT, "Update FAILED!")
-            log(LOG_LEVEL_ERROR, CHILD_DEVICE_WEATHER_CURR, MSG_SUBTYPE_TEXT, "Exception {e}")
+            log(LOG_LEVEL_ERROR, CHILD_DEVICE_WEATHER_CURR, MSG_SUBTYPE_TEXT, f"Exception {e}")
 
         Clock.schedule_once(display_current_weather, interval)
 
@@ -919,7 +939,7 @@ def display_forecast_weather(dt):
 
             forecastTomoImg.source = "web/images/" + tomo["weather"][0]["icon"] + ".png"
             forecastTomoSummaryLabel.text = "[b]" + tomo["weather"][0]["description"].title() + "[/b]"
-            forecastTomoHighValueLabel.text = str(int(round(tomo["temp"]["max"], 0))) + scaleUnits + ", Low: " + str(int(round(tomo["temp"]["min"], 0))) + scaleUnits
+            forecastTomoHighValueLabel.text = str(int(round(tomo["temp"]["max"], 0))) + scaleUnits + ", " + _("Low") + ": " + str(int(round(tomo["temp"]["min"], 0))) + scaleUnits
             forecastTomoHumidityValueLabel.text = str(tomo["humidity"]) + "%"
             forecastTomoWindValueLabel.text = str(int(round(tomo["speed"] * windFactor))) + windUnits + " " + get_cardinal_direction(tomo["deg"])
             forecastTomoCloudsValueLabel.text = str(tomo["clouds"]) + "%"
@@ -963,7 +983,7 @@ def display_forecast_weather(dt):
             forecastTomoRainLabel.text = ""
             forecastTomoRainValueLabel.text = ""
             log(LOG_LEVEL_ERROR, CHILD_DEVICE_WEATHER_FCAST_TODAY, MSG_SUBTYPE_TEXT, "Update FAILED!")
-            log(LOG_LEVEL_ERROR, CHILD_DEVICE_WEATHER_FCAST_TODAY, MSG_SUBTYPE_TEXT, "Exception {e}")
+            log(LOG_LEVEL_ERROR, CHILD_DEVICE_WEATHER_FCAST_TODAY, MSG_SUBTYPE_TEXT, f"Exception {e}")
 
         Clock.schedule_once(display_forecast_weather, interval)
 
@@ -1015,17 +1035,22 @@ def change_system_settings():
         if fanControl.state == "down":
             GPIO.output(fanPin, GPIO.HIGH)
             setMqttFanCommand("on")
-            log(LOG_LEVEL_STATE, CHILD_DEVICE_FAN, MSG_SUBTYPE_TEXT, "1 pump on")
-            # setRemotePump( 11 )
+            log(LOG_LEVEL_STATE, CHILD_DEVICE_FAN, MSG_SUBTYPE_TEXT, "fan forced on")
         else:
             setMqttFanCommand("off")
             if GPIO.input(heatPin) and GPIO.input(coolPin):
                 GPIO.output(fanPin, GPIO.LOW)
-                log(LOG_LEVEL_STATE, CHILD_DEVICE_FAN, MSG_SUBTYPE_TEXT, "3 GPIO.LOW")
+                log(LOG_LEVEL_STATE, CHILD_DEVICE_FAN, MSG_SUBTYPE_TEXT, "fan off (idle)")
 
-        # save the thermostat state in case of restart
-        state.put("state", setTemp=setTemp, heatControl=heatControl.state, coolControl=coolControl.state,
-                  fanControl=fanControl.state, holdControl=holdControl.state)
+        # save the thermostat state in case of restart — nur bei Änderung (SD-Karten-Schoner)
+        global _last_persisted_state
+        current_state = (setTemp, heatControl.state, coolControl.state,
+                         fanControl.state, holdControl.state)
+        if current_state != _last_persisted_state:
+            state.put("state", setTemp=setTemp, heatControl=heatControl.state,
+                      coolControl=coolControl.state, fanControl=fanControl.state,
+                      holdControl=holdControl.state)
+            _last_persisted_state = current_state
 
         status_info = json.loads(get_status_info())
         statusHeatValueLabel.text = status_info['heat']
@@ -1068,15 +1093,18 @@ def check_sensor_temp(dt):
         global tempSensor
 
         if tempSensor is not None:
-            rawTemp = tempSensor.get_temperature(sensorUnits)
-            correctedTemp = (((rawTemp - freezingMeasured) * referenceRange) / measuredRange) + freezingPoint
-            currentTemp = round(correctedTemp, 1)
-            log(LOG_LEVEL_DEBUG, CHILD_DEVICE_TEMP, MSG_SUBTYPE_CUSTOM + "/raw", str(rawTemp))
-            log(LOG_LEVEL_DEBUG, CHILD_DEVICE_TEMP, MSG_SUBTYPE_CUSTOM + "/corrected", str(correctedTemp))
+            try:
+                rawTemp = tempSensor.get_temperature(sensorUnits)
+                correctedTemp = (((rawTemp - freezingMeasured) * referenceRange) / measuredRange) + freezingPoint
+                currentTemp = round(correctedTemp, 1)
+                log(LOG_LEVEL_DEBUG, CHILD_DEVICE_TEMP, MSG_SUBTYPE_CUSTOM + "/raw", str(rawTemp))
+                log(LOG_LEVEL_DEBUG, CHILD_DEVICE_TEMP, MSG_SUBTYPE_CUSTOM + "/corrected", str(correctedTemp))
 
-            if abs(priorCorrected - correctedTemp) >= TEMP_TOLERANCE:
-                log(LOG_LEVEL_STATE, CHILD_DEVICE_TEMP, MSG_SUBTYPE_TEMPERATURE, str(currentTemp))
-                priorCorrected = correctedTemp
+                if abs(priorCorrected - correctedTemp) >= TEMP_TOLERANCE:
+                    log(LOG_LEVEL_STATE, CHILD_DEVICE_TEMP, MSG_SUBTYPE_TEMPERATURE, str(currentTemp))
+                    priorCorrected = correctedTemp
+            except Exception as e:
+                log(LOG_LEVEL_ERROR, CHILD_DEVICE_TEMP, MSG_SUBTYPE_TEXT, f"Sensor read failed: {e}")
 
         currentLabel.text = "[b]" + str(currentTemp) + scaleUnits + "[/b]"
         altCurLabel.text = currentLabel.text
@@ -1185,41 +1213,56 @@ def getVersion(message):
     payload = message.payload.decode('utf-8')
 
     # Zeigen Sie den Inhalt der Nachricht und das Empfangsdatum und die Uhrzeit an
-    log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/getVersion", "Empfangene Nachricht: {payload}",
-        single=True)
     log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/getVersion",
-        "Empfangszeitpunkt: {message.timestamp}", single=True)
+        f"Empfangene Nachricht: {payload}", single=True)
+    log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/getVersion",
+        f"Empfangszeitpunkt: {message.timestamp}", single=True)
     print(f"Empfangene Nachricht: {payload}")
     print(f"Empfangszeitpunkt: {message.timestamp}")
     log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_VERSION, THERMOSTAT_VERSION)
 
 def restart(message):
-    payload = message.payload.decode('utf-8')
+    payload = message.payload.decode('utf-8') if isinstance(message.payload, bytes) else str(message.payload)
 
-    log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/restart", "Thermostat restarting...", single=True)
-    GPIO.cleanup()
+    log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/restart",
+        f"Thermostat restarting... ({payload})", single=True)
+
+    try:
+        GPIO.cleanup()
+    except Exception:
+        pass
 
     if logFile is not None:
-        logFile.flush()
-        os.fsync(logFile.fileno())
-        logFile.close()
+        try:
+            logFile.flush()
+            os.fsync(logFile.fileno())
+            logFile.close()
+        except Exception:
+            pass
 
     if mqttEnabled:
-        mqttc.disconnect()
+        try:
+            mqttc.disconnect()
+        except Exception:
+            pass
 
-    os.execl(sys.executable, 'python', __file__, *sys.argv[1:])  # This does not return!!!
+    os.execl(sys.executable, 'python', __file__, *sys.argv[1:])  # kehrt nicht zurück
 
 def setLogLevel(msg):
     global logLevel
 
-    if LOG_LEVELS.get(msg.payload):
-        log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/loglevel",
-            "LogLevel set to: " + str(msg.payload))
+    payload = msg.payload
+    if isinstance(payload, bytes):
+        payload = payload.decode('utf-8')
+    payload = payload.strip().lower()
 
-        logLevel = LOG_LEVELS.get(msg.payload, logLevel)
+    if payload in LOG_LEVELS:
+        logLevel = LOG_LEVELS[payload]
+        log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/loglevel",
+            "LogLevel set to: " + payload)
     else:
         log(LOG_LEVEL_ERROR, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/loglevel",
-            "Invalid LogLevel: " + str(msg.payload))
+            "Invalid LogLevel: " + payload)
 
 def set_domestic_water(message):
     global domestic_key_value_pair, domesticwater
@@ -1239,8 +1282,12 @@ def set_domestic_water(message):
         domestic_last_message_time = time.time()
         Clock.schedule_once(check_domestic_water_timeout, domestic_timeout_duration)
 
-    except json.JSONDecodeError:
-        status_msg = "Invalid JSON format in command payload"
+    except (json.JSONDecodeError, UnicodeDecodeError) as e:
+        log(LOG_LEVEL_ERROR, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT,
+            f"Invalid domestic_water payload: {e}")
+    except Exception as e:
+        log(LOG_LEVEL_ERROR, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT,
+            f"set_domestic_water error: {e}")
 
 def check_domestic_water_timeout(dt):
     global domestic_last_message_time, domesticwater
@@ -1257,7 +1304,12 @@ def setMqttFanCommand(state):
         mqttc.publish(mqttPub_fanstate, state)
 
 if mqttEnabled:
-    mqttc = mqtt.Client(client_id = mqttClientID, protocol=mqtt.MQTTv5)
+    # paho-mqtt v2 verlangt CallbackAPIVersion, v1 kennt das Argument nicht
+    try:
+        mqttc = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+                            client_id=mqttClientID, protocol=mqtt.MQTTv5)
+    except (AttributeError, TypeError):
+        mqttc = mqtt.Client(client_id=mqttClientID, protocol=mqtt.MQTTv5)
     mqttc.on_connect = mqtt_on_connect
     mqttc.on_disconnect = on_disconnect
 
@@ -1271,16 +1323,20 @@ if mqttEnabled:
     if faikinEnabled:
         mqttc.message_callback_add(mqttSub_faikin, lambda client, userdata, message: get_faikin_status(message))
 
-    # Make sure we can reach the mqtt server by pinging it
+    # Make sure we can reach the mqtt server by pinging it (max 30s wait)
     pingCount = 0
-    pingCmd = "ping -c 1 " + mqttServer
+    pingCmd = "ping -c 1 -W 1 " + mqttServer + " > /dev/null 2>&1"
 
-    while os.system(pingCmd) != 0 and pingCount <= 100:
-        ++pingCount
+    while os.system(pingCmd) != 0 and pingCount < 30:
+        pingCount += 1
         time.sleep(1)
 
-    mqttc.connect(mqttServer, mqttPort)
-    mqttc.loop_start()
+    try:
+        mqttc.connect(mqttServer, mqttPort, keepalive=60)
+        mqttc.loop_start()
+    except Exception as e:
+        log(LOG_LEVEL_ERROR, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT,
+            f"Initial MQTT connect failed: {e}")
 
 
 ##############################################################################
@@ -1382,7 +1438,7 @@ class ThermostatApp(App):
         forecastTodayRainLabel.pos = (30, 180)
         forecastTodayRainValueLabel.pos = (150, 180)
 
-        forecastTomoHeading = Label(text="[b]" + _("Tomorow") + "[/b]:", font_size='20sp', markup=True, size_hint=(None, None),
+        forecastTomoHeading = Label(text="[b]" + _("Tomorrow") + "[/b]:", font_size='20sp', markup=True, size_hint=(None, None),
                                     pos=(0, 130))
         forecastTomoImg.pos = (0, 100)
         forecastTomoSummaryLabel.pos = (100, 100)
@@ -1518,10 +1574,13 @@ class ThermostatApp(App):
 def startScheduler():
     log(LOG_LEVEL_INFO, CHILD_DEVICE_SCHEDULER, MSG_SUBTYPE_TEXT, "Started")
     while True:
-        if holdControl.state == "normal":
-            with scheduleLock:
-                log(LOG_LEVEL_DEBUG, CHILD_DEVICE_SCHEDULER, MSG_SUBTYPE_TEXT, "Running pending")
-                schedule.run_pending()
+        try:
+            if holdControl.state == "normal":
+                with scheduleLock:
+                    log(LOG_LEVEL_DEBUG, CHILD_DEVICE_SCHEDULER, MSG_SUBTYPE_TEXT, "Running pending")
+                    schedule.run_pending()
+        except Exception as e:
+            log(LOG_LEVEL_ERROR, CHILD_DEVICE_SCHEDULER, MSG_SUBTYPE_TEXT, f"Scheduler error: {e}")
 
         time.sleep(10)
 
@@ -1539,18 +1598,19 @@ def setScheduledTemp(temp):
 def getTestSchedule():
     days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
     testSched = {}
+    base_low  = 19.0 if tempScale == "metric" else 68.0
+    base_high = 22.0 if tempScale == "metric" else 72.0
 
-    for i in range(len(days)):
+    for i, day in enumerate(days):
         tempList = []
         for minute in range(60 * 24):
             hrs, mins = divmod(minute, 60)
+            base = base_low if minute % 2 == 1 else base_high
             tempList.append([
-                str(hrs).rjust(2, '0') + ":" + str(mins).rjust(2, '0'),
-                float(i + 1) / 10.0 + ((19.0 if tempScale == "metric" else 68.0) if minute % 2 == 1 else (
-                    22.0 if tempScale == "metric" else 72.0))
+                f"{hrs:02d}:{mins:02d}",
+                float(i + 1) / 10.0 + base
             ])
-
-        testSched[days[i]] = tempList
+        testSched[day] = tempList
 
     return testSched
 
@@ -1579,10 +1639,10 @@ def reloadSchedule():
 
         if activeSched is not None:
             for day, entries in activeSched.items():
-                for i, entry in enumerate(entries):
+                for entry in entries:
                     getattr(schedule.every(), day).at(entry[0]).do(setScheduledTemp, entry[1])
                     log(LOG_LEVEL_DEBUG, CHILD_DEVICE_SCHEDULER, MSG_SUBTYPE_TEXT,
-                        "Set " + day + ", at: " + entry[0] + " = " + str(entry[1]) + scaleUnits)
+                        f"Set {day}, at: {entry[0]} = {entry[1]}{scaleUnits}")
 
 
 ##############################################################################
@@ -1592,115 +1652,121 @@ def reloadSchedule():
 ##############################################################################
 
 class WebInterface(object):
+    # HTML-Templates einmal beim Start laden statt bei jedem Request neu lesen
+    _template_cache = {}
+
+    @classmethod
+    def _load_template(cls, path):
+        if path not in cls._template_cache:
+            with open(path, "r") as f:
+                cls._template_cache[path] = f.read()
+        return cls._template_cache[path]
+
+    @staticmethod
+    def _kivy_to_html(text):
+        """Kivy-Markup-Tags in HTML umwandeln."""
+        return (text.replace("[b]", "<b>")
+                    .replace("[/b]", "</b>")
+                    .replace("\n", "<br>")
+                    .replace(" ", "&nbsp;")
+                    .replace("[color=00ff00]", '<font color="green">')
+                    .replace("[/color]", '</font>'))
 
     @cherrypy.expose
     def index(self):
         log(LOG_LEVEL_INFO, CHILD_DEVICE_WEBSERVER, MSG_SUBTYPE_TEXT,
             "Served thermostat.html to: " + cherrypy.request.remote.ip)
-        file = open("web/html/thermostat.html", "r")
-
-        html = file.read()
-
-        file.close()
+        html = self._load_template("web/html/thermostat.html")
 
         with thermostatLock:
-            html = html.replace("@@version@@", str(THERMOSTAT_VERSION))
-            html = html.replace("@@temp@@", str(setTemp))
-            html = html.replace("@@temperaturlabel@@", str(_("Temperature")))
-            html = html.replace("@@current@@", str(currentTemp) + scaleUnits)
-            html = html.replace("@@domesticwaterlabel@@", str(currentWaterLabel.text).replace("[b]", "<b>").replace("[/b]", "</b>").replace("\n", "<br>").replace(" ","&nbsp;"))
-            html = html.replace("@@domesticwater@@", str(domesticwater) + scaleUnits)
-            html = html.replace("@@minTemp@@", str(minTemp))
-            html = html.replace("@@maxTemp@@", str(maxTemp))
-            html = html.replace("@@tempStep@@", str(tempStep))
-
             status_info = json.loads(get_status_info())
+            dt_str = (self._kivy_to_html(dateLabel.text) + ", " +
+                      self._kivy_to_html(timeLabel.text))
 
-            html = html.replace("@@heatlabel@@", _("Heat"))
-            html = html.replace("@@coollabel@@", _("Cool"))
-            html = html.replace("@@fanlabel@@", _("Fan"))
-            html = html.replace("@@schedlabel@@", _("Sched"))
-            html = html.replace("@@holdlabel@@", _("Hold"))
-            html = html.replace("@@applysettings@@", _("Apply settings"))
-            html = html.replace("@@editschedule@@", _("Edit schedule"))
-
-            html = html.replace("@@heat@@", str(status_info['heat']).replace("[b]", "<b>").replace("[/b]", "</b>").replace("\n", "<br>").replace(" ","&nbsp;").replace("[color=00ff00]", '<font color="green">').replace("[/color]", '</font>'))
-            html = html.replace("@@cool@@", str(status_info['cool']).replace("[b]", "<b>").replace("[/b]", "</b>").replace("\n", "<br>").replace(" ","&nbsp;").replace("[color=00ff00]", '<font color="green">').replace("[/color]", '</font>'))
-            html = html.replace("@@fan@@", str(status_info['fan']).replace("[b]", "<b>").replace("[/b]", "</b>").replace("\n", "<br>").replace(" ","&nbsp;").replace("[color=00ff00]", '<font color="green">').replace("[/color]", '</font>'))
-            html = html.replace("@@sched@@", str(status_info['sched']).replace("[b]", "<b>").replace("[/b]", "</b>").replace("\n", "<br>").replace(" ","&nbsp;").replace("[color=00ff00]", '<font color="green">').replace("[/color]", '</font>'))
-
-            html = html.replace("@@dt@@", dateLabel.text.replace("[b]", "<b>").replace("[/b]",
-                                                                                       "</b>") + ", " + timeLabel.text.replace(
-                "[b]", "<b>").replace("[/b]", "</b>"))
-            html = html.replace("@@heatChecked@@", "checked" if heatControl.state == "down" else "")
-            html = html.replace("@@coolChecked@@", "checked" if coolControl.state == "down" else "")
-            html = html.replace("@@fanChecked@@", "checked" if fanControl.state == "down" else "")
-            html = html.replace("@@holdChecked@@", "checked" if holdControl.state == "down" else "")
+            replacements = {
+                "@@version@@": str(THERMOSTAT_VERSION),
+                "@@temp@@": str(setTemp),
+                "@@temperaturlabel@@": str(_("Temperature")),
+                "@@current@@": str(currentTemp) + scaleUnits,
+                "@@domesticwaterlabel@@": self._kivy_to_html(currentWaterLabel.text),
+                "@@domesticwater@@": str(domesticwater) + scaleUnits,
+                "@@minTemp@@": str(minTemp),
+                "@@maxTemp@@": str(maxTemp),
+                "@@tempStep@@": str(tempStep),
+                "@@heatlabel@@": _("Heat"),
+                "@@coollabel@@": _("Cool"),
+                "@@fanlabel@@": _("Fan"),
+                "@@schedlabel@@": _("Sched"),
+                "@@holdlabel@@": _("Hold"),
+                "@@applysettings@@": _("Apply settings"),
+                "@@editschedule@@": _("Edit schedule"),
+                "@@heat@@": self._kivy_to_html(str(status_info['heat'])),
+                "@@cool@@": self._kivy_to_html(str(status_info['cool'])),
+                "@@fan@@": self._kivy_to_html(str(status_info['fan'])),
+                "@@sched@@": self._kivy_to_html(str(status_info['sched'])),
+                "@@dt@@": dt_str,
+                "@@heatChecked@@": "checked" if heatControl.state == "down" else "",
+                "@@coolChecked@@": "checked" if coolControl.state == "down" else "",
+                "@@fanChecked@@": "checked" if fanControl.state == "down" else "",
+                "@@holdChecked@@": "checked" if holdControl.state == "down" else "",
+            }
+            for key, val in replacements.items():
+                html = html.replace(key, val)
 
         return html
 
     @cherrypy.expose
     def set(self, temp, heat="off", cool="off", fan="off", hold="off"):
         global setTemp
-        global setLabel
-        global heatControl
-        global coolControl
-        global fanControl
 
         log(LOG_LEVEL_INFO, CHILD_DEVICE_WEBSERVER, MSG_SUBTYPE_TEXT,
             "Set thermostat received from: " + cherrypy.request.remote.ip)
 
-        tempChanged = setTemp != float(temp)
+        # Eingabe-Validierung — verhindert ValueError-Crash bei ungültigem Input
+        try:
+            new_temp = float(temp)
+        except (TypeError, ValueError):
+            raise cherrypy.HTTPError(400, "Invalid temperature value")
+        if not (minTemp <= new_temp <= maxTemp):
+            raise cherrypy.HTTPError(400,
+                f"Temperature out of range ({minTemp}–{maxTemp})")
+
+        tempChanged = setTemp != new_temp
 
         with thermostatLock:
-            setTemp = float(temp)
-            setLabel.text = "  Set\n[b]" + str(setTemp) + "c[/b]"
+            setTemp = new_temp
+            setLabel.text = "  Set\n[b]" + str(setTemp) + scaleUnits + "[/b]"
             tempSlider.value = setTemp
 
             if tempChanged:
                 log(LOG_LEVEL_STATE, CHILD_DEVICE_WEBSERVER, MSG_SUBTYPE_TEMPERATURE, str(setTemp))
 
-            if heat == "on":
-                setControlState(heatControl, "down")
-            else:
-                setControlState(heatControl, "normal")
-
-            if cool == "on":
-                setControlState(coolControl, "down")
-            else:
-                setControlState(coolControl, "normal")
-
-            if fan == "on":
-                setControlState(fanControl, "down")
-            else:
-                setControlState(fanControl, "normal")
-
-            if hold == "on":
-                setControlState(holdControl, "down")
-            else:
-                setControlState(holdControl, "normal")
+            setControlState(heatControl, "down" if heat == "on" else "normal")
+            setControlState(coolControl, "down" if cool == "on" else "normal")
+            setControlState(fanControl,  "down" if fan  == "on" else "normal")
+            setControlState(holdControl, "down" if hold == "on" else "normal")
 
             reloadSchedule()
 
-        file = open("web/html/thermostat_set.html", "r")
+        html = self._load_template("web/html/thermostat_set.html")
 
-        html = file.read()
-
-        file.close()
+        def highlight(val, active):
+            return ('<font color="red"><b>' + str(val) + '</b></font>') if active else str(val)
 
         with thermostatLock:
-            html = html.replace("@@version@@", str(THERMOSTAT_VERSION))
-            html = html.replace("@@dt@@", dateLabel.text.replace("[b]", "<b>").replace("[/b]", "</b>") + ", " + timeLabel.text.replace("[b]", "<b>").replace("[/b]", "</b>"))
-            html = html.replace("@@temp@@", ('<font color="red"><b>' if tempChanged else "") + str(setTemp) + (
-                '</b></font>' if tempChanged else ""))
-            html = html.replace("@@heat@@", ('<font color="red"><b>' if heat == "on" else "") + heat + (
-                '</b></font>' if heat == "on" else ""))
-            html = html.replace("@@cool@@", ('<font color="red"><b>' if cool == "on" else "") + cool + (
-                '</b></font>' if cool == "on" else ""))
-            html = html.replace("@@fan@@", ('<font color="red"><b>' if fan == "on" else "") + fan + (
-                '</b></font>' if fan == "on" else ""))
-            html = html.replace("@@hold@@", ('<font color="red"><b>' if hold == "on" else "") + hold + (
-                '</b></font>' if hold == "on" else ""))
+            dt_str = (self._kivy_to_html(dateLabel.text) + ", " +
+                      self._kivy_to_html(timeLabel.text))
+            replacements = {
+                "@@version@@": str(THERMOSTAT_VERSION),
+                "@@dt@@": dt_str,
+                "@@temp@@": highlight(setTemp, tempChanged),
+                "@@heat@@": highlight(heat, heat == "on"),
+                "@@cool@@": highlight(cool, cool == "on"),
+                "@@fan@@":  highlight(fan,  fan  == "on"),
+                "@@hold@@": highlight(hold, hold == "on"),
+            }
+            for key, val in replacements.items():
+                html = html.replace(key, val)
 
         return html
 
@@ -1708,21 +1774,20 @@ class WebInterface(object):
     def schedule(self):
         log(LOG_LEVEL_INFO, CHILD_DEVICE_WEBSERVER, MSG_SUBTYPE_TEXT,
             "Served thermostat_schedule.html to: " + cherrypy.request.remote.ip)
-        file = open("web/html/thermostat_schedule.html", "r")
-
-        html = file.read()
-
-        file.close()
+        html = self._load_template("web/html/thermostat_schedule.html")
 
         with thermostatLock:
-            html = html.replace("@@version@@", str(THERMOSTAT_VERSION))
-            html = html.replace("@@minTemp@@", str(minTemp))
-            html = html.replace("@@maxTemp@@", str(maxTemp))
-            html = html.replace("@@tempStep@@", str(tempStep))
-
-            html = html.replace("@@dt@@", dateLabel.text.replace("[b]", "<b>").replace("[/b]",
-                                                                                       "</b>") + ", " + timeLabel.text.replace(
-                "[b]", "<b>").replace("[/b]", "</b>"))
+            dt_str = (self._kivy_to_html(dateLabel.text) + ", " +
+                      self._kivy_to_html(timeLabel.text))
+            replacements = {
+                "@@version@@": str(THERMOSTAT_VERSION),
+                "@@minTemp@@": str(minTemp),
+                "@@maxTemp@@": str(maxTemp),
+                "@@tempStep@@": str(tempStep),
+                "@@dt@@": dt_str,
+            }
+            for key, val in replacements.items():
+                html = html.replace(key, val)
 
         return html
 
@@ -1731,36 +1796,29 @@ class WebInterface(object):
     def save(self):
         log(LOG_LEVEL_STATE, CHILD_DEVICE_WEBSERVER, MSG_SUBTYPE_TEXT,
             "Set schedule received from: " + cherrypy.request.remote.ip)
-        schedule = cherrypy.request.json
+        sched_data = cherrypy.request.json
 
         with scheduleLock:
-            file = open("thermostat_schedule.json", "w")
-
-            file.write(json.dumps(schedule, indent=4))
-
-            file.close()
+            with open("thermostat_schedule.json", "w") as f:
+                f.write(json.dumps(sched_data, indent=4))
 
         reloadSchedule()
 
-        file = open("web/html/thermostat_saved.html", "r")
-
-        html = file.read()
-
-        file.close()
+        html = self._load_template("web/html/thermostat_saved.html")
 
         with thermostatLock:
+            dt_str = (self._kivy_to_html(dateLabel.text) + ", " +
+                      self._kivy_to_html(timeLabel.text))
             html = html.replace("@@version@@", str(THERMOSTAT_VERSION))
-            html = html.replace("@@dt@@", dateLabel.text.replace("[b]", "<b>").replace("[/b]",
-                                                                                       "</b>") + ", " + timeLabel.text.replace(
-                "[b]", "<b>").replace("[/b]", "</b>"))
+            html = html.replace("@@dt@@", dt_str)
 
         return html
 
 
 def startWebServer():
     host = "discover" if not (settings.exists("web")) else settings.get("web")["host"]
-    cherrypy.server.socket_host = host if host != "discover" else get_ip_address()  # use machine IP address if host
-    # = "discover"
+    # Wenn host = "discover", verwende lokale IP-Adresse
+    cherrypy.server.socket_host = host if host != "discover" else get_ip_address()
     cherrypy.server.socket_port = 80 if not (settings.exists("web")) else settings.get("web")["port"]
 
     log(LOG_LEVEL_STATE, CHILD_DEVICE_WEBSERVER, MSG_SUBTYPE_TEXT,
