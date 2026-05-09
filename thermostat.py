@@ -146,7 +146,7 @@ CHILD_DEVICE_TEMP = "temperatureSensor"
 CHILD_DEVICE_SCREEN = "screen"
 CHILD_DEVICE_SCHEDULER = "scheduler"
 CHILD_DEVICE_WEBSERVER = "webserver"
-CHILD_DEVICE_FAIKIN = "faikout"
+CHILD_DEVICE_FAIKIN = "faikin"
 
 CHILD_DEVICES = [
     CHILD_DEVICE_NODE,
@@ -181,7 +181,7 @@ MSG_SUBTYPE_TEMPERATURE = "temperature"
 MSG_SUBTYPE_FORECAST = "forecast"
 MSG_SUBTYPE_CUSTOM = "custom"
 MSG_SUBTYPE_TEXT = "text"
-MSG_SUBTYPE_FAIKIN = "faikout"
+MSG_SUBTYPE_FAIKIN = "faikin"
 
 ##############################################################################
 #                                                                            #
@@ -189,7 +189,7 @@ MSG_SUBTYPE_FAIKIN = "faikout"
 #                                                                            #
 ##############################################################################
 
-THERMOSTAT_VERSION = "2.3.1"
+THERMOSTAT_VERSION = "2.2.1"
 
 # Debug settings
 
@@ -228,17 +228,21 @@ faikinName = 'GuestAC' if not (settings.exists("faikin")) else settings.get("fai
 outside_temp = 0.0
 # MQTT settings/setup
 
-def on_disconnect(client, userdata, rc, properties=None):
-    if rc != 0:
-        print(f"Unexpected MQTT Broker disconnection! {rc}")
-        log(LOG_LEVEL_INFO, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT, f"Unexpected MQTT Broker disconnection: {rc}")
+def on_disconnect(client, userdata, disconnect_flags, reason_code, properties):
+    # paho-mqtt v2 / CallbackAPIVersion.VERSION2 signature
+    if reason_code != 0:
+        print(f"Unexpected MQTT Broker disconnection! {reason_code}")
+        log(LOG_LEVEL_INFO, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT,
+            f"Unexpected MQTT Broker disconnection: {reason_code}")
 
-def mqtt_on_connect(client, userdata, flags, rc, properties=None):
+def mqtt_on_connect(client, userdata, connect_flags, reason_code, properties):
+    # paho-mqtt v2 / CallbackAPIVersion.VERSION2 signature
     global mqttReconnect
 
-    print("MQTT Connected with result code: " + str(rc))
+    print("MQTT Connected with result code: " + str(reason_code))
 
-    if rc == 0:
+    # ReasonCode unterstützt Vergleich mit 0 / hat .is_failure
+    if reason_code == 0:
         if mqttReconnect:
             log(LOG_LEVEL_STATE, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT,
                 "Reconnected to: " + mqttServer + ":" + str(mqttPort))
@@ -250,7 +254,7 @@ def mqtt_on_connect(client, userdata, flags, rc, properties=None):
         mqtt_subscriptions = [
             (mqttSub_restart, 0),  # Subscribe to restart commands
             (mqttSub_loglevel, 0),  # Subscribe to log level commands
-            (mqttSub_version, 0)# Subscribe to version commands
+            (mqttSub_version, 0)   # Subscribe to version commands
         ]
 
         if domestic_water_enabled:
@@ -266,7 +270,8 @@ def mqtt_on_connect(client, userdata, flags, rc, properties=None):
             log(LOG_LEVEL_INFO, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT,
                 "Subscribe Succeeded: " + mqttServer + ":" + str(mqttPort))
         else:
-            log(LOG_LEVEL_ERROR, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT, "Subscribe FAILED, result code: " + src[0])
+            log(LOG_LEVEL_ERROR, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT,
+                "Subscribe FAILED, result code: " + str(src[0]))
 
 
 if mqttAvailable:
@@ -281,7 +286,7 @@ if mqttAvailable:
     mqttSub_restart = str(mqttPubPrefix + "/" + mqttClientID + "/command/restart")
     mqttSub_loglevel = str(mqttPubPrefix + "/" + mqttClientID + "/command/loglevel")
     mqttSub_state = str(mqttPubPrefix + "/" + mqttClientID + "/command/state")
-    mqttSub_faikin = str("Faikout/" + faikinName)
+    mqttSub_faikin = str("Faikin/" + faikinName)
 
     mqttPub_state = str(mqttPubPrefix + "/" + mqttClientID + "/state/status")
     mqttPub_fanstate = str(mqttPubPrefix + "/" + mqttClientID + "/state/fan")
