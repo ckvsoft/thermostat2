@@ -152,8 +152,8 @@ class HotWaterControl:
     # ------------------------------------------------------------------ override
 
     def force_on(self, until_ts=None):
-        """Manual override: heater ON now until <until_ts>.
-        Default deadline: today 23:00 local time."""
+        """Manual override: heater ON now until <until_ts> and as long as
+        the water is below min_temp. Default deadline: today 23:00."""
         if not self.enabled:
             return
         if until_ts is None:
@@ -197,16 +197,20 @@ class HotWaterControl:
 
         now = time.time()
         if override_until and now < override_until:
+            if temp >= self.target_temp or temp > self.min_temp:
+                # Override fulfilled: above min temp (or target) ->
+                # end the override and resume the normal logic.
+                with self._lock:
+                    self.override_until = 0
+                decision, reason = self._decide(temp, cheap)
+                return self._apply(decision, reason)
             decision, reason = self._override_decision(temp)
             return self._apply(decision, reason)
         decision, reason = self._decide(temp, cheap)
         return self._apply(decision, reason)
 
     def _override_decision(self, temp):
-        """Manual override is active: heat until target is reached or
-        the override deadline expires."""
-        if temp >= self.target_temp:
-            return "off", "override: water warm enough"
+        """Manual override is active and water is below min temp: heat."""
         return "on", "manual override active"
 
     def _decide(self, temp, cheap):
