@@ -45,6 +45,9 @@ msgid "Off"
 msgstr "Aus"
 
 #: thermostat.py:587
+msgid "Heater"
+msgstr "Heizstab"
+
 msgid "Domestic water"
 msgstr "Warmwasser"
 

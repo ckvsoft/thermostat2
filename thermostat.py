@@ -68,6 +68,8 @@ kivy.require('2.3.0')  # mit requirements.txt konsistent
 from kivy.app import App
 from kivy.uix.togglebutton import ToggleButton
 from kivy.uix.label import Label
+from kivy.uix.widget import Widget
+from kivy.core.text import Label as CoreLabel
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.image import Image
 from kivy.uix.slider import Slider
@@ -614,9 +616,9 @@ currentLabel = Label(text="[b]" + str(currentTemp) + scaleUnits + "[/b]", size_h
 currentWaterLabel = Label(text="[b]" + _("Domestic water") + "[/b]:", size_hint=(None, None), font_size='25sp', markup=True, text_size=(200, 100))
 currentWaterValueLabel = Label(text=str(domesticwater) + scaleUnits, size_hint=(None, None), font_size='25sp', markup=True, text_size=(100, 100))
 
-altCurLabel = Label(text=currentLabel.text, size_hint=(None, None), font_size='100sp', markup=True, text_size=(300, 200), color=(0.5, 0.5, 0.5, 0.2))
-altWaterLabel = Label(text=currentWaterLabel.text, size_hint=(None, None), font_size='50sp', markup=True, text_size=(500, 200), color=(0.5, 0.5, 0.5, 0.2))
-altWaterValueLabel = Label(text=currentWaterValueLabel.text, size_hint=(None, None), font_size='50sp', markup=True, text_size=(500, 200), color=(0.5, 0.5, 0.5, 0.2))
+altCurLabel = Label(text=currentLabel.text, size_hint=(None, None), font_size='80sp', markup=True, text_size=(300, 120), color=(0.5, 0.5, 0.5, 0.35))
+altWaterLabel = Label(text=currentWaterLabel.text, size_hint=(None, None), font_size='26sp', markup=True, text_size=(190, 42), color=(0.45, 0.45, 0.45, 0.6))
+altWaterValueLabel = Label(text=currentWaterValueLabel.text, size_hint=(None, None), font_size='36sp', markup=True, text_size=(190, 55), color=(0.6, 0.6, 0.6, 0.55))
 
 setLabel = Label(text="  Set\n[b]" + str(setTemp) + scaleUnits + "[/b]", size_hint=(None, None), font_size='25sp', markup=True, text_size=(100, 100))
 
@@ -637,14 +639,17 @@ dateLabel = Label(text="[b]" + time.strftime("%a %d. %b %Y") + "[/b]", size_hint
 timeStr = time.strftime("%H:%M")
 
 timeLabel = Label(text="[b]" + (timeStr if timeStr[0:1] != "0" else timeStr[1:]) + "[/b]", size_hint=(None, None), font_size='40sp', markup=True, text_size=(180, 75))
-altTimeLabel = Label(text=timeLabel.text, size_hint=(None, None), font_size='40sp', markup=True, text_size=(180, 75), color=(0.4, 0.4, 0.4, 0.2))
+altTimeLabel = Label(text=timeLabel.text, size_hint=(None, None), font_size='32sp', markup=True, text_size=(160, 55), color=(0.5, 0.5, 0.5, 0.6))
 
 # Hotwater / price display labels (sleep mode / minimalUI)
-altPriceLabel = Label(text=_("Electricity") + ":", size_hint=(None, None), font_size='30sp', markup=True, text_size=(300, 50), color=(0.5, 0.5, 0.5, 0.2))
-altPriceValueLabel = Label(text="--", size_hint=(None, None), font_size='30sp', markup=True, text_size=(500, 50), color=(0.5, 0.5, 0.5, 0.2))
-altPriceHintLabel = Label(text="", size_hint=(None, None), font_size='18sp', markup=True, text_size=(600, 40), color=(0.5, 0.5, 0.5, 0.2))
-altHeaterLabel = Label(text=_("Heater") + ":", size_hint=(None, None), font_size='30sp', markup=True, text_size=(300, 50), color=(0.5, 0.5, 0.5, 0.2))
-altHeaterValueLabel = Label(text="--", size_hint=(None, None), font_size='30sp', markup=True, text_size=(500, 50), color=(0.5, 0.5, 0.5, 0.2))
+altDecisionLabel = Label(text="", size_hint=(None, None), font_size='32sp', markup=True, text_size=(270, 55), halign='left', color=(0, 0, 0, 0))
+altHeaterLabel = Label(text="[b]" + _("Heater") + "[/b]:", size_hint=(None, None), font_size='26sp', markup=True, text_size=(190, 42), color=(0.45, 0.45, 0.45, 0.6))
+altHeaterValueLabel = Label(text="--", size_hint=(None, None), font_size='36sp', markup=True, text_size=(120, 55), color=(0.6, 0.6, 0.6, 0.55))
+altHourLabels = []
+
+# Price bar chart (sleep mode / minimalUI) - today only
+priceBarsWidget = None
+PRICE_BAR_HOURS = 24
 
 tempSlider = Slider(orientation='vertical', min=minTemp, max=maxTemp, step=tempStep, value=setTemp, size_hint=(None, None))
 
@@ -1197,6 +1202,89 @@ def show_minimal_ui(dt):
         screenMgr.current = "minimalUI"
         log(LOG_LEVEL_DEBUG, CHILD_DEVICE_SCREEN, MSG_SUBTYPE_TEXT, "Minimal")
 
+class PriceBarsWidget(Widget):
+    """Horizontal colored timeline strip for the sleep screen.
+    24 segments for today's hours: green = cheap block, red = discharge,
+    gray = neutral. Past hours are dimmed. A white vertical line marks
+    the current time."""
+
+    def update_bars(self, status):
+        today = status.get("prices_today") or {}
+        colors = status.get("colors_today") or {}
+        cheap = bool(status.get("in_cheap_block"))
+        self._redraw(today, colors, cheap, status)
+
+    def _redraw(self, today, colors, cheap, status):
+        self.canvas.clear()
+        if not today:
+            return
+        w, h = self.width, self.height
+        strip_h = int(h * 0.5)
+        strip_y = self.y + h - strip_h
+        hour_w = w / 24.0
+        now_hour = int(time.strftime("%H"))
+        now_min = int(time.strftime("%M"))
+        now_frac = now_hour + now_min / 60.0
+
+        with self.canvas:
+            for hr in range(24):
+                key = str(hr)
+                col = colors.get(key, "gray")
+                is_past = hr < now_hour
+                if col == "green":
+                    if is_past:
+                        Color(0.0, 0.35, 0.0, 0.4)
+                    else:
+                        Color(0.0, 0.8, 0.0, 0.95)
+                elif col == "red":
+                    if is_past:
+                        Color(0.4, 0.08, 0.05, 0.45)
+                    else:
+                        Color(0.9, 0.15, 0.1, 0.95)
+                else:
+                    if is_past:
+                        Color(0.2, 0.2, 0.2, 0.35)
+                    else:
+                        Color(0.4, 0.4, 0.4, 0.65)
+                x = self.x + hr * hour_w
+                Rectangle(pos=(x, strip_y), size=(hour_w - 1, strip_h))
+
+            now_x = self.x + now_frac * hour_w
+            Color(1, 1, 1, 0.7)
+            Rectangle(pos=(now_x - 1, strip_y - 5), size=(3, strip_h + 10))
+
+            # Hour numbers drawn directly on the same canvas as the bars
+            for hr in range(24):
+                tl = CoreLabel(text=f"{hr:02d}", font_size=15,
+                               color=(0.55, 0.55, 0.55, 0.8))
+                tl.refresh()
+                num_x = self.x + hr * hour_w + (hour_w - tl.texture.width) / 2
+                Rectangle(texture=tl.texture,
+                          pos=(num_x, self.y + 6),
+                          size=tl.texture.size)
+
+        if cheap:
+            altDecisionLabel.text = "[b]JA[/b] [size=18](" + "Strom günstig" + ")[/size]"
+            altDecisionLabel.color = (0.0, 0.55, 0.0, 0.6)
+        else:
+            altDecisionLabel.text = "[b]NEIN[/b] [size=18](" + "Strom teuer" + ")[/size]"
+            altDecisionLabel.color = (0.7, 0.1, 0.06, 0.6)
+
+        state = status.get("heater_state")
+        self._apply_heater_state(state)
+
+    def _apply_heater_state(self, state):
+        if state == "on":
+            altHeaterValueLabel.text = "[b]" + _("On") + "[/b]"
+            altHeaterValueLabel.color = (0.85, 0.5, 0.08, 0.7)
+        elif state == "off":
+            altHeaterValueLabel.text = "[b]" + _("Off") + "[/b]"
+            altHeaterValueLabel.color = (0.45, 0.45, 0.45, 0.5)
+        else:
+            altHeaterValueLabel.text = "--"
+            altHeaterValueLabel.color = (0.45, 0.45, 0.45, 0.5)
+
+
 class MinimalScreen(Screen):
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
@@ -1308,6 +1396,7 @@ def set_domestic_water(message):
             domesticwater = domestic_water_value
             currentWaterValueLabel.text = "[b]" + str(domesticwater) + scaleUnits + "[/b]"
             altWaterValueLabel.text = "[b]" + str(domesticwater) + scaleUnits + "[/b]"
+            altWaterValueLabel.color = (0.6, 0.6, 0.6, 0.55)
 
         domestic_last_message_time = time.time()
         Clock.schedule_once(check_domestic_water_timeout, domestic_timeout_duration)
@@ -1328,40 +1417,19 @@ def check_domestic_water_timeout(dt):
         domesticwater = "n/a"
         currentWaterValueLabel.text = "[b]" + str(domesticwater) + "[/b]"
         altWaterValueLabel.text = "[b]" + str(domesticwater) + "[/b]"
+        altWaterValueLabel.color = (0.6, 0.6, 0.6, 0.55)
 
 def update_hotwater_ui(status):
     """Update the sleep-mode labels from the HotWaterControl status.
     Runs on the Kivy UI thread via Clock.schedule_once because the
     status can arrive from the HotWaterControl polling thread."""
     def _apply(dt):
-        cheap = bool(status.get("in_cheap_block"))
-        if status.get("seuss_reachable"):
-            price = status.get("current_price")
-            price_text = str(price) + " ct" if price is not None else "--"
-            if cheap:
-                price_text += " [b]✓[/b]"
-                col = (0.0, 0.8, 0.0, 0.7)
-            else:
-                col = (0.5, 0.5, 0.5, 0.2)
-            altPriceValueLabel.text = "[b]" + price_text + "[/b]"
-            altPriceValueLabel.color = col
-            altPriceHintLabel.text = _("cheap") if cheap else _("expensive")
-            altPriceHintLabel.color = col
-        else:
-            altPriceValueLabel.text = _("SEUSS offline")
-            altPriceValueLabel.color = (0.8, 0.2, 0.2, 0.5)
-            altPriceHintLabel.text = ""
-
-        state = status.get("heater_state")
-        if state == "on":
-            altHeaterValueLabel.text = "[b]" + _("ON") + "[/b]"
-            altHeaterValueLabel.color = (0.0, 0.8, 0.0, 0.7)
-        elif state == "off":
-            altHeaterValueLabel.text = "[b]" + _("OFF") + "[/b]"
-            altHeaterValueLabel.color = (0.5, 0.5, 0.5, 0.2)
-        else:
-            altHeaterValueLabel.text = "--"
-            altHeaterValueLabel.color = (0.5, 0.5, 0.5, 0.2)
+        w = priceBarsWidget
+        if w is not None:
+            try:
+                w.update_bars(status)
+            except Exception:
+                pass
 
     Clock.schedule_once(_apply, 0)
 
@@ -1598,25 +1666,25 @@ class ThermostatApp(App):
                 Color(0.0, 0.0, 0.0, 1)
                 self.rect = Rectangle(size=(800, 480), pos=minUI.pos)
 
-            altCurLabel.pos = (380, 290)
-            altWaterLabel.pos = (340, 200)
-            altWaterValueLabel.pos = (660, 200)
-            altTimeLabel.pos = (400, 380)
-            altPriceLabel.pos = (340, 130)
-            altPriceValueLabel.pos = (480, 130)
-            altPriceHintLabel.pos = (340, 95)
-            altHeaterLabel.pos = (340, 55)
-            altHeaterValueLabel.pos = (480, 55)
+            altCurLabel.pos = (390, 275)
+            altTimeLabel.pos = (45, 398)
+            altDecisionLabel.pos = (575, 398)
+            altWaterLabel.pos = (55, 165)
+            altWaterValueLabel.pos = (240, 163)
+            altHeaterLabel.pos = (430, 165)
+            altHeaterValueLabel.pos = (575, 163)
+
+            global priceBarsWidget
+            priceBarsWidget = PriceBarsWidget(size=(800, 140), size_hint=(None, None), pos=(0, 0))
 
             minUI.add_widget(altCurLabel)
+            minUI.add_widget(altTimeLabel)
             minUI.add_widget(altWaterLabel)
             minUI.add_widget(altWaterValueLabel)
-            minUI.add_widget(altTimeLabel)
-            minUI.add_widget(altPriceLabel)
-            minUI.add_widget(altPriceValueLabel)
-            minUI.add_widget(altPriceHintLabel)
             minUI.add_widget(altHeaterLabel)
             minUI.add_widget(altHeaterValueLabel)
+            minUI.add_widget(altDecisionLabel)
+            minUI.add_widget(priceBarsWidget)
             minScreen.add_widget(minUI)
 
             screenMgr = ScreenManager(

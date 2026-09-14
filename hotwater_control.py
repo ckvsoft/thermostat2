@@ -12,13 +12,23 @@
 #  Control logic (temperature hysteresis):
 #
 #      water >= target_temp            -> OFF  (warm enough)
-#      water <  min_temp               -> ON   (too cold, price irrelevant)
+#      water <  min_temp               -> ON   (too cold) -- but ONLY
+#                                         inside the force window
+#                                         (force_start_hour..force_end_hour,
+#                                         wrap-around, e.g. 18:00-9:00).
+#                                         Cheap prices are typically during
+#                                         the day, never at night -- so the
+#                                         force rule must apply at night,
+#                                         otherwise the tank cools to cold
+#                                         by morning. During the day the
+#                                         cheap-block rule is in charge.
 #      in_cheap_block AND water < target_temp - hysteresis -> ON
 #      otherwise                       -> OFF
 #
 #  Fail-safe: when SEUSS is unreachable the cheap-price flag falls back
 #  to "not cheap", so the heater only switches on when the water is
-#  actually cold -> hot water stays guaranteed.
+#  actually cold (and inside the force window) -> hot water stays
+#  guaranteed.
 
 import json
 import threading
@@ -40,6 +50,12 @@ class HotWaterControl:
         self.min_on_seconds = float(settings.get("min_on_seconds", 600))
         self.min_off_seconds = float(settings.get("min_off_seconds", 60))
         self.http_timeout = float(settings.get("http_timeout", 8))
+        # Time window during which "water below min_temp" forces heating
+        # regardless of price. Wrap-around window (e.g. 18:00 -> 9:00):
+        # cheap prices sit during the day, so the cold-water emergency
+        # rule applies outside them -- mainly during night/early morning.
+        self.force_start_hour = int(settings.get("force_start_hour", 18))
+        self.force_end_hour = int(settings.get("force_end_hour", 9))
 
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -52,6 +68,8 @@ class HotWaterControl:
         self.avg_tomorrow = None
         self.prices_today = {}
         self.prices_tomorrow = {}
+        self.colors_today = {}
+        self.colors_tomorrow = {}
         self.hard_cap = None
         self.market = None
         self.timestamp = None
@@ -111,6 +129,8 @@ class HotWaterControl:
             self.avg_tomorrow = data.get("avg_tomorrow")
             self.prices_today = data.get("prices_today", {}) or {}
             self.prices_tomorrow = data.get("prices_tomorrow", {}) or {}
+            self.colors_today = data.get("colors_today", {}) or {}
+            self.colors_tomorrow = data.get("colors_tomorrow", {}) or {}
             self.hard_cap = data.get("hard_cap")
             self.market = data.get("market")
             self.timestamp = data.get("timestamp")
@@ -157,10 +177,22 @@ class HotWaterControl:
         if temp >= self.target_temp:
             return "off", "water reached target temp"
         if temp < self.min_temp:
-            return "on", "water below min temp"
+            hour = time.localtime().tm_hour
+            if self._in_force_window(hour):
+                return "on", "water below min temp (force window)"
         if cheap and temp < self.target_temp - self.hysteresis:
             return "on", "in cheap block, water below target"
-        return "off", "not in cheap block, water still ok"
+        return "off", "water below min temp, outside force window" if temp < self.min_temp else "not in cheap block, water still ok"
+
+    def _in_force_window(self, hour):
+        """Wrap-around check: start > end means the window spans
+        midnight (e.g. 18:00 -> 9:00)."""
+        s, e = self.force_start_hour, self.force_end_hour
+        if s == e:
+            return True
+        if s <= e:
+            return s <= hour < e
+        return hour >= s or hour < e
 
     def _apply(self, decision, reason):
         now = time.time()
@@ -228,12 +260,16 @@ class HotWaterControl:
                 "avg_tomorrow": self.avg_tomorrow,
                 "prices_today": self.prices_today,
                 "prices_tomorrow": self.prices_tomorrow,
+                "colors_today": self.colors_today,
+                "colors_tomorrow": self.colors_tomorrow,
                 "hard_cap": self.hard_cap,
                 "market": self.market,
                 "timestamp": self.timestamp,
                 "target_temp": self.target_temp,
                 "min_temp": self.min_temp,
                 "hysteresis": self.hysteresis,
+                "force_start_hour": self.force_start_hour,
+                "force_end_hour": self.force_end_hour,
                 "heater_state": self.heater_state,
                 "last_decision": self.last_decision,
             }
