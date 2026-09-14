@@ -77,6 +77,9 @@ class HotWaterControl:
         self.heater_state = "off"
         self.last_state_change = 0.0
         self.last_decision = None
+        # Manual override ("touch on the sleep screen"): heater forced ON
+        # until this unix timestamp (default: today 23:00). 0 = no override.
+        self.override_until = 0.0
 
         # Optional callback receiving get_status() dict (UI update)
         self.ui_callback = None
@@ -146,6 +149,31 @@ class HotWaterControl:
             self.in_cheap_block = False
         self._notify_ui()
 
+    # ------------------------------------------------------------------ override
+
+    def force_on(self, until_ts=None):
+        """Manual override: heater ON now until <until_ts>.
+        Default deadline: today 23:00 local time."""
+        if not self.enabled:
+            return
+        if until_ts is None:
+            lt = time.localtime()
+            until_ts = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday,
+                                    23, 0, 0, 0, 0, -1))
+        with self._lock:
+            self.override_until = float(until_ts)
+        self._apply("on", "manual override", force=True)
+        self._notify_ui()
+
+    def force_off(self):
+        """Cancel the manual override and switch the heater off."""
+        if not self.enabled:
+            return
+        with self._lock:
+            self.override_until = 0
+        self._apply("off", "manual override cancelled", force=True)
+        self._notify_ui()
+
     # ------------------------------------------------------------------ heater
 
     def update_water_temp(self, water_temp):
@@ -165,9 +193,21 @@ class HotWaterControl:
 
         with self._lock:
             cheap = self.in_cheap_block
+            override_until = self.override_until
 
+        now = time.time()
+        if override_until and now < override_until:
+            decision, reason = self._override_decision(temp)
+            return self._apply(decision, reason)
         decision, reason = self._decide(temp, cheap)
         return self._apply(decision, reason)
+
+    def _override_decision(self, temp):
+        """Manual override is active: heat until target is reached or
+        the override deadline expires."""
+        if temp >= self.target_temp:
+            return "off", "override: water warm enough"
+        return "on", "manual override active"
 
     def _decide(self, temp, cheap):
         """Pure decision function -> ('on' | 'off', reason string)."""
@@ -188,16 +228,17 @@ class HotWaterControl:
             return s <= hour < e
         return hour >= s or hour < e
 
-    def _apply(self, decision, reason):
+    def _apply(self, decision, reason, force=False):
         now = time.time()
         # Minimum on/off guards protect the heating element from
-        # short-cycling relay chatter.
+        # short-cycling relay chatter. A manual override bypasses them.
         if decision == self.heater_state:
             return self.heater_state
-        if decision == "on" and (now - self.last_state_change) < self.min_off_seconds:
-            return self.heater_state
-        if decision == "off" and (now - self.last_state_change) < self.min_on_seconds:
-            return self.heater_state
+        if not force:
+            if decision == "on" and (now - self.last_state_change) < self.min_off_seconds:
+                return self.heater_state
+            if decision == "off" and (now - self.last_state_change) < self.min_on_seconds:
+                return self.heater_state
 
         self.last_state_change = now
         self.heater_state = decision

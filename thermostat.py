@@ -77,6 +77,9 @@ from kivy.clock import Clock
 from kivy.graphics import Color, Rectangle
 from kivy.storage.jsonstore import JsonStore
 from kivy.uix.screenmanager import ScreenManager, Screen, NoTransition
+from kivy.uix.popup import Popup
+from kivy.uix.button import Button
+from kivy.uix.boxlayout import BoxLayout
 
 ##############################################################################
 #                                                                            #
@@ -1289,6 +1292,7 @@ class MinimalScreen(Screen):
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
             touch.grab(self)
+            self._down_time = time.time()
             return True
 
     def on_touch_up(self, touch):
@@ -1300,9 +1304,21 @@ class MinimalScreen(Screen):
                 if minUITimer is not None:
                     Clock.unschedule(show_minimal_ui)
                 minUITimer = Clock.schedule_once(show_minimal_ui, minUITimeout)
-                self.manager.current = "thermostatUI"
-                # screen_on()
-                log(LOG_LEVEL_DEBUG, CHILD_DEVICE_SCREEN, MSG_SUBTYPE_TEXT, "Full")
+                # Long press (>= 2s) on the sleep screen = manual heating
+                # override (heater on, latest until 23:00) and stay in
+                # sleep mode. A short tap wakes the full UI as before.
+                if time.time() - getattr(self, "_down_time", time.time()) >= 2.0:
+                    if hotwater_control is not None and hotwater_control.enabled:
+                        try:
+                            hotwater_control.force_on()
+                        except Exception:
+                            pass
+                    log(LOG_LEVEL_DEBUG, CHILD_DEVICE_SCREEN, MSG_SUBTYPE_TEXT,
+                        "Long press: hotwater override")
+                else:
+                    self.manager.current = "thermostatUI"
+                    # screen_on()
+                    log(LOG_LEVEL_DEBUG, CHILD_DEVICE_SCREEN, MSG_SUBTYPE_TEXT, "Full")
             return True
 
 
@@ -1494,6 +1510,32 @@ class ThermostatApp(App):
         # Create the rest of the UI objects ( and bind them to callbacks, if necessary ):
 
         wimg = Image(source='web/images/logo.png')
+
+        def show_reboot_dialog(instance, touch):
+            if not instance.collide_point(*touch.pos):
+                return
+            content = BoxLayout(orientation='vertical', padding=10, spacing=10)
+            content.add_widget(Label(text="[b]Thermostat jetzt neu starten?[/b]",
+                                     font_size='22sp', markup=True))
+            btns = BoxLayout(orientation='horizontal',
+                             size_hint=(1, None), height=60, spacing=10)
+            btn_ok = Button(text="Reboot", size_hint=(1, 1))
+            btn_cancel = Button(text="Abbrechen", size_hint=(1, 1))
+            btns.add_widget(btn_ok)
+            btns.add_widget(btn_cancel)
+            content.add_widget(btns)
+            popup = Popup(title="Thermostat", content=content,
+                          size_hint=(0.6, 0.4), auto_dismiss=True)
+
+            def do_reboot(btn):
+                popup.dismiss()
+                subprocess.Popen(["/sbin/reboot"])
+
+            btn_ok.bind(on_press=do_reboot)
+            btn_cancel.bind(on_press=lambda b: popup.dismiss())
+            popup.open()
+
+        wimg.bind(on_touch_down=show_reboot_dialog)
 
         coolControl.bind(on_press=control_callback)
         heatControl.bind(on_press=control_callback)
