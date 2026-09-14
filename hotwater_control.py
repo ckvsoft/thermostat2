@@ -11,24 +11,21 @@
 #
 #  Control logic (temperature hysteresis):
 #
-#      water >= target_temp            -> OFF  (warm enough)
-#      water <  min_temp               -> ON   (too cold) -- but ONLY
+#      water >  target_temp            -> OFF  (warm enough)
+#      water <  min_temp               -> ON   (emergency) -- but ONLY
 #                                         inside the force window
 #                                         (force_start_hour..force_end_hour,
-#                                         wrap-around, e.g. 18:00-9:00).
-#                                         Cheap prices are typically during
-#                                         the day, never at night -- so the
-#                                         force rule must apply at night,
-#                                         otherwise the tank cools to cold
-#                                         by morning. During the day the
-#                                         cheap-block rule is in charge.
-#      in_cheap_block AND water < target_temp - hysteresis -> ON
+#                                         default 9:00-18:00: the day zone,
+#                                         where hot water is typically used).
+#                                         Outside it (night) the water below
+#                                         min_temp does NOT force heating.
+#      min_temp <= water and cheap AND water < target - hysteresis -> ON
 #      otherwise                       -> OFF
 #
 #  Fail-safe: when SEUSS is unreachable the cheap-price flag falls back
 #  to "not cheap", so the heater only switches on when the water is
 #  actually cold (and inside the force window) -> hot water stays
-#  guaranteed.
+#  guaranteed during the day.
 
 import json
 import threading
@@ -50,12 +47,12 @@ class HotWaterControl:
         self.min_on_seconds = float(settings.get("min_on_seconds", 600))
         self.min_off_seconds = float(settings.get("min_off_seconds", 60))
         self.http_timeout = float(settings.get("http_timeout", 8))
-        # Time window during which "water below min_temp" forces heating
-        # regardless of price. Wrap-around window (e.g. 18:00 -> 9:00):
-        # cheap prices sit during the day, so the cold-water emergency
-        # rule applies outside them -- mainly during night/early morning.
-        self.force_start_hour = int(settings.get("force_start_hour", 18))
-        self.force_end_hour = int(settings.get("force_end_hour", 9))
+        # Emergency window during which "water below min_temp" forces
+        # heating regardless of price (default 9:00-18:00, the day zone
+        # where hot water is typically used). Outside (night) the
+        # cheap-block rule alone decides.
+        self.force_start_hour = int(settings.get("force_start_hour", 9))
+        self.force_end_hour = int(settings.get("force_end_hour", 18))
 
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -185,11 +182,8 @@ class HotWaterControl:
         return "off", "water below min temp, outside force window" if temp < self.min_temp else "not in cheap block, water still ok"
 
     def _in_force_window(self, hour):
-        """Wrap-around check: start > end means the window spans
-        midnight (e.g. 18:00 -> 9:00)."""
+        """True when the emergency rule may fire (default 9:00-18:00)."""
         s, e = self.force_start_hour, self.force_end_hour
-        if s == e:
-            return True
         if s <= e:
             return s <= hour < e
         return hour >= s or hour < e
