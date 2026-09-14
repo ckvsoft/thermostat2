@@ -47,6 +47,13 @@ import uuid
 
 from hysteresistimer import HysteresisTimer
 
+try:
+    from hotwater_control import HotWaterControl
+    hotwater_module_available = True
+except ImportError:
+    HotWaterControl = None
+    hotwater_module_available = False
+
 import kivy
 from kivy.core.window import Window
 
@@ -221,6 +228,10 @@ domestic_water_topic = '' if not (settings.exists("domestic_water")) else settin
 domestic_key_value_pair = '' if not (settings.exists("domestic_water")) else settings.get("domestic_water")["key_value_pair"]
 domestic_timeout_duration = 300 # 5 min
 domestic_last_message_time = time.time()
+
+# Hotwater (Heizstab on Shelly smart plug) control via SEUSS price data
+hotwater_settings = {} if not (settings.exists("hotwater_control")) else settings.get("hotwater_control")
+hotwater_control = HotWaterControl(hotwater_settings) if hotwater_module_available else None
 
 # Faikin (Daikin AC) setup:
 faikinEnabled = 0 if not (settings.exists("faikin")) else settings.get("faikin")["enabled"]
@@ -627,6 +638,13 @@ timeStr = time.strftime("%H:%M")
 
 timeLabel = Label(text="[b]" + (timeStr if timeStr[0:1] != "0" else timeStr[1:]) + "[/b]", size_hint=(None, None), font_size='40sp', markup=True, text_size=(180, 75))
 altTimeLabel = Label(text=timeLabel.text, size_hint=(None, None), font_size='40sp', markup=True, text_size=(180, 75), color=(0.4, 0.4, 0.4, 0.2))
+
+# Hotwater / price display labels (sleep mode / minimalUI)
+altPriceLabel = Label(text=_("Electricity") + ":", size_hint=(None, None), font_size='30sp', markup=True, text_size=(300, 50), color=(0.5, 0.5, 0.5, 0.2))
+altPriceValueLabel = Label(text="--", size_hint=(None, None), font_size='30sp', markup=True, text_size=(500, 50), color=(0.5, 0.5, 0.5, 0.2))
+altPriceHintLabel = Label(text="", size_hint=(None, None), font_size='18sp', markup=True, text_size=(600, 40), color=(0.5, 0.5, 0.5, 0.2))
+altHeaterLabel = Label(text=_("Heater") + ":", size_hint=(None, None), font_size='30sp', markup=True, text_size=(300, 50), color=(0.5, 0.5, 0.5, 0.2))
+altHeaterValueLabel = Label(text="--", size_hint=(None, None), font_size='30sp', markup=True, text_size=(500, 50), color=(0.5, 0.5, 0.5, 0.2))
 
 tempSlider = Slider(orientation='vertical', min=minTemp, max=maxTemp, step=tempStep, value=setTemp, size_hint=(None, None))
 
@@ -1123,6 +1141,13 @@ def check_sensor_temp(dt):
 
         change_system_settings()
 
+        if hotwater_control is not None and hotwater_control.enabled:
+            try:
+                hotwater_control.update_water_temp(domesticwater)
+            except Exception as e:
+                log(LOG_LEVEL_ERROR, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT,
+                    f"hotwater control error: {e}")
+
 # This is called when the desired temp slider is updated:
 def update_set_temp(slider, value):
     with thermostatLock:
@@ -1303,6 +1328,42 @@ def check_domestic_water_timeout(dt):
         domesticwater = "n/a"
         currentWaterValueLabel.text = "[b]" + str(domesticwater) + "[/b]"
         altWaterValueLabel.text = "[b]" + str(domesticwater) + "[/b]"
+
+def update_hotwater_ui(status):
+    """Update the sleep-mode labels from the HotWaterControl status.
+    Runs on the Kivy UI thread via Clock.schedule_once because the
+    status can arrive from the HotWaterControl polling thread."""
+    def _apply(dt):
+        cheap = bool(status.get("in_cheap_block"))
+        if status.get("seuss_reachable"):
+            price = status.get("current_price")
+            price_text = str(price) + " ct" if price is not None else "--"
+            if cheap:
+                price_text += " [b]✓[/b]"
+                col = (0.0, 0.8, 0.0, 0.7)
+            else:
+                col = (0.5, 0.5, 0.5, 0.2)
+            altPriceValueLabel.text = "[b]" + price_text + "[/b]"
+            altPriceValueLabel.color = col
+            altPriceHintLabel.text = _("cheap") if cheap else _("expensive")
+            altPriceHintLabel.color = col
+        else:
+            altPriceValueLabel.text = _("SEUSS offline")
+            altPriceValueLabel.color = (0.8, 0.2, 0.2, 0.5)
+            altPriceHintLabel.text = ""
+
+        state = status.get("heater_state")
+        if state == "on":
+            altHeaterValueLabel.text = "[b]" + _("ON") + "[/b]"
+            altHeaterValueLabel.color = (0.0, 0.8, 0.0, 0.7)
+        elif state == "off":
+            altHeaterValueLabel.text = "[b]" + _("OFF") + "[/b]"
+            altHeaterValueLabel.color = (0.5, 0.5, 0.5, 0.2)
+        else:
+            altHeaterValueLabel.text = "--"
+            altHeaterValueLabel.color = (0.5, 0.5, 0.5, 0.2)
+
+    Clock.schedule_once(_apply, 0)
 
 def setMqttFanCommand(state):
     if mqttEnabled:
@@ -1541,11 +1602,21 @@ class ThermostatApp(App):
             altWaterLabel.pos = (340, 200)
             altWaterValueLabel.pos = (660, 200)
             altTimeLabel.pos = (400, 380)
+            altPriceLabel.pos = (340, 130)
+            altPriceValueLabel.pos = (480, 130)
+            altPriceHintLabel.pos = (340, 95)
+            altHeaterLabel.pos = (340, 55)
+            altHeaterValueLabel.pos = (480, 55)
 
             minUI.add_widget(altCurLabel)
             minUI.add_widget(altWaterLabel)
             minUI.add_widget(altWaterValueLabel)
             minUI.add_widget(altTimeLabel)
+            minUI.add_widget(altPriceLabel)
+            minUI.add_widget(altPriceValueLabel)
+            minUI.add_widget(altPriceHintLabel)
+            minUI.add_widget(altHeaterLabel)
+            minUI.add_widget(altHeaterValueLabel)
             minScreen.add_widget(minUI)
 
             screenMgr = ScreenManager(
@@ -1562,6 +1633,11 @@ class ThermostatApp(App):
 
         # Start checking the temperature
         Clock.schedule_interval(check_sensor_temp, tempCheckInterval)
+
+        # Hotwater control: push price/heater status to the UI labels
+        if hotwater_control is not None and hotwater_control.enabled:
+            hotwater_control.set_ui_callback(update_hotwater_ui)
+            hotwater_control.start()
 
         # Show the current weather & forecast
         Clock.schedule_once(display_current_weather, 5)
