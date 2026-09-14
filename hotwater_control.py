@@ -311,4 +311,5 @@ class HotWaterControl:
                 "force_end_hour": self.force_end_hour,
                 "heater_state": self.heater_state,
                 "last_decision": self.last_decision,
+                "override_until": self.override_until,
             }
