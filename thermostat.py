@@ -1289,10 +1289,24 @@ class PriceBarsWidget(Widget):
 
 
 class MinimalScreen(Screen):
+    def _long_press_triggered(self, dt):
+        """Fires after 2s of holding the sleep screen without release."""
+        self._lp_done = True
+        with thermostatLock:
+            if hotwater_control is not None and hotwater_control.enabled:
+                try:
+                    hotwater_control.force_on()
+                except Exception:
+                    pass
+        log(LOG_LEVEL_DEBUG, CHILD_DEVICE_SCREEN, MSG_SUBTYPE_TEXT,
+            "Long press: hotwater override")
+
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
             touch.grab(self)
             self._down_time = time.time()
+            self._lp_done = False
+            self._lp_event = Clock.schedule_once(self._long_press_triggered, 2.0)
             return True
 
     def on_touch_up(self, touch):
@@ -1300,21 +1314,16 @@ class MinimalScreen(Screen):
 
         if touch.grab_current is self:
             touch.ungrab(self)
+            if getattr(self, "_lp_event", None) is not None:
+                self._lp_event.cancel()
+                self._lp_event = None
             with thermostatLock:
                 if minUITimer is not None:
                     Clock.unschedule(show_minimal_ui)
                 minUITimer = Clock.schedule_once(show_minimal_ui, minUITimeout)
-                # Long press (>= 2s) on the sleep screen = manual heating
-                # override (heater on, latest until 23:00) and stay in
-                # sleep mode. A short tap wakes the full UI as before.
-                if time.time() - getattr(self, "_down_time", time.time()) >= 2.0:
-                    if hotwater_control is not None and hotwater_control.enabled:
-                        try:
-                            hotwater_control.force_on()
-                        except Exception:
-                            pass
-                    log(LOG_LEVEL_DEBUG, CHILD_DEVICE_SCREEN, MSG_SUBTYPE_TEXT,
-                        "Long press: hotwater override")
+                if self._lp_done:
+                    # Long press already handled the override -> stay asleep
+                    pass
                 else:
                     self.manager.current = "thermostatUI"
                     # screen_on()
