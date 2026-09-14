@@ -32,6 +32,7 @@ Key features include:
 	9. Minimal UI (screensaver) mode
 	10. PIR Motion sensor to switch from minimal to full UI mode (optional)
 	11. Detailed logging with selectable levels, including optional remote logging to a MQTT broker/server
+	12. Hot water heater control: a Shelly smart plug feeding a water heater is switched based on SEUSS spot-market prices and the domestic water temperature
 
 ###Thermostat User Interface
 
@@ -116,6 +117,52 @@ https://learn.adafruit.com/adafruits-raspberry-pi-lesson-11-ds18b20-temperature-
 
 The author's HVAC system had separate R and Rc hot lines, with the furnace switched to the R and the A/C and fan switched to the Rc lines, and so required two separate
 Makeatronics 24V AC SSR Boards. YMMV.
+
+
+##Hot Water Control (SEUSS spot market):
+
+The thermostat can control a water heater (heating rod) via a Shelly smart plug using SEUSS spot-market price data. It polls SEUSS over HTTP (`GET /api/prices`), receives the current price state, the hourly price curve of today and a per-hour cheap/expensive color classification and drives the Shelly relay accordingly.
+
+The minimal UI (sleep screen) shows:
+
+	- Domestic water temperature and heater state (Ein/Aus)
+	- A colored 24h timeline of today's prices: green = cheap block, red = discharge block, gray = neutral; past hours are dimmed and a white line marks the current time, hour numbers below
+	- The decision "JA (Strom günstig)" / "NEIN (Strom teuer)" at a glance
+
+Gestures:
+
+	- Short tap on the sleep screen: wake up the full thermostat UI (as usual)
+	- Long press (>= 2 s) on the sleep screen: manual override -- heater on until the water is above min_temp, at the latest until 23:00 (or above target temp)
+	- Tap on the logo in the full UI: dialog with confirmation to reboot the Raspberry Pi
+
+Control logic:
+
+	- water >  target_temp              -> heater OFF (warm enough)
+	- water <  min_temp (force window only, default 09:00-18:00) -> heater ON regardless of price
+	- min_temp <= water < target AND in a cheap block -> heater ON
+	- otherwise                         -> heater OFF
+
+Minimum on/off times protect the heating element from short-cycling. When SEUSS is unreachable, heating only happens via the force window or the manual override.
+
+Example configuration in `thermostat_settings.json`:
+
+```json
+"hotwater_control": {
+    "enabled": 1,
+    "seuss_url": "http://<seuss-host>:5000",
+    "poll_interval_seconds": 300,
+    "min_temp": 40.0,
+    "target_temp": 60.0,
+    "hysteresis": 1.5,
+    "shelly_ip": "10.1.1.140",
+    "shelly_relay": 0,
+    "force_start_hour": 9,
+    "force_end_hour": 18,
+    "min_on_seconds": 600,
+    "min_off_seconds": 60,
+    "http_timeout": 8
+}
+```
 
 
 ##Temperature Sensor Calibration:

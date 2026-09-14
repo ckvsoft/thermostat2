@@ -201,7 +201,7 @@ MSG_SUBTYPE_FAIKIN = "faikin"
 #                                                                            #
 ##############################################################################
 
-THERMOSTAT_VERSION = "2.2.2"
+THERMOSTAT_VERSION = "2.2.3"
 
 # Debug settings
 
