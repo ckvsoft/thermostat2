@@ -201,7 +201,7 @@ MSG_SUBTYPE_FAIKIN = "faikin"
 #                                                                            #
 ##############################################################################
 
-THERMOSTAT_VERSION = "2.2.3"
+THERMOSTAT_VERSION = "2.2.4"
 
 # Debug settings
 
@@ -1214,7 +1214,7 @@ class PriceBarsWidget(Widget):
     def update_bars(self, status):
         today = status.get("prices_today") or {}
         colors = status.get("colors_today") or {}
-        cheap = bool(status.get("in_cheap_block"))
+        cheap = bool(status.get("cheap_now", status.get("in_cheap_block")))
         self._redraw(today, colors, cheap, status)
 
     def _redraw(self, today, colors, cheap, status):

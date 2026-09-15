@@ -139,8 +139,10 @@ Control logic:
 
 	- water >  target_temp              -> heater OFF (warm enough)
 	- water <  min_temp (force window only, default 09:00-18:00) -> heater ON regardless of price
-	- min_temp <= water < target AND in a cheap block -> heater ON
+	- min_temp <= water < target AND cheap -> heater ON
 	- otherwise                         -> heater OFF
+
+"cheap" is either the SEUSS charging block flag (`in_cheap_block`, default) or -- with `cheap_hours` > 0 -- the N cheapest hours of today, computed locally from the hourly price curve (analogous to `number_of_lowest_prices` for the SEUSS switches, but with an own count for the slow heating rod). The sleep screen price timeline always shows the SEUSS chart colors; only the heater decision uses the `cheap_hours` selection.
 
 Minimum on/off times protect the heating element from short-cycling. When SEUSS is unreachable, heating only happens via the force window or the manual override.
 
@@ -154,6 +156,7 @@ Example configuration in `thermostat_settings.json`:
     "min_temp": 40.0,
     "target_temp": 60.0,
     "hysteresis": 1.5,
+    "cheap_hours": 10,
     "shelly_ip": "10.1.1.140",
     "shelly_relay": 0,
     "force_start_hour": 9,

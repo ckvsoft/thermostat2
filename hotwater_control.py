@@ -22,6 +22,12 @@
 #      min_temp <= water and cheap AND water < target - hysteresis -> ON
 #      otherwise                       -> OFF
 #
+#      "cheap" is either the SEUSS charging block flag (default) or --
+#      with cheap_hours > 0 in the config -- the N cheapest hours of
+#      today computed locally from the hourly price curve (like
+#      number_of_lowest_prices for the SEUSS switches, but with an own
+#      count for the slow heating rod that needs many hours).
+#
 #  Fail-safe: when SEUSS is unreachable the cheap-price flag falls back
 #  to "not cheap", so the heater only switches on when the water is
 #  actually cold (and inside the force window) -> hot water stays
@@ -53,6 +59,12 @@ class HotWaterControl:
         # cheap-block rule alone decides.
         self.force_start_hour = int(settings.get("force_start_hour", 9))
         self.force_end_hour = int(settings.get("force_end_hour", 18))
+        # Number of cheapest hours of today the heater may use ("like the
+        # SEUSS switches": number_of_lowest_prices). Example: 10 = the
+        # heater runs inside the 10 cheapest hours of today while the
+        # water is below target. 0 = use the SEUSS charging blocks
+        # (in_cheap_block flag, blocks chosen by the SEUSS config).
+        self.cheap_hours = int(settings.get("cheap_hours", 0))
 
         self._lock = threading.Lock()
         self._stop = threading.Event()
@@ -72,6 +84,11 @@ class HotWaterControl:
         self.timestamp = None
         self.seuss_reachable = False
         self.last_error = None
+        # Cheap-hours selection (local date guarded): _cheap_set holds the
+        # hour indices of the cheap_hours cheapest hours of today,
+        # _prices_date is the local date of the last successful poll.
+        self._cheap_set = set()
+        self._prices_date = None
 
         # Heater relay state
         self.heater_state = "off"
@@ -136,6 +153,8 @@ class HotWaterControl:
             self.timestamp = data.get("timestamp")
             self.seuss_reachable = True
             self.last_error = None
+            self._prices_date = time.strftime("%Y-%m-%d")
+            self._recompute_cheap_set()
 
         self._notify_ui()
 
@@ -176,6 +195,34 @@ class HotWaterControl:
 
     # ------------------------------------------------------------------ heater
 
+    def _recompute_cheap_set(self):
+        """Pick the cheap_hours cheapest hours of today out of the
+        hourly price curve. Caller must hold self._lock."""
+        if self.cheap_hours <= 0:
+            self._cheap_set = set()
+            return
+        hours = []
+        for key, price in (self.prices_today or {}).items():
+            try:
+                hours.append((float(price), int(key)))
+            except (TypeError, ValueError):
+                continue
+        hours.sort()
+        self._cheap_set = {h for _, h in hours[:self.cheap_hours]}
+
+    def _is_cheap_now(self):
+        """Effective 'cheap power' flag for the heater decision.
+        Caller must hold self._lock. With cheap_hours > 0 the locally
+        selected cheapest hours decide, otherwise the SEUSS
+        in_cheap_block flag. Stale/offline data is never 'cheap'."""
+        if self.cheap_hours <= 0:
+            return self.in_cheap_block
+        if not self.seuss_reachable:
+            return False
+        if self._prices_date != time.strftime("%Y-%m-%d"):
+            return False
+        return int(time.strftime("%H")) in self._cheap_set
+
     def update_water_temp(self, water_temp):
         """
         Feed the current domestic water temperature into the control
@@ -192,7 +239,7 @@ class HotWaterControl:
             return self.heater_state
 
         with self._lock:
-            cheap = self.in_cheap_block
+            cheap = self._is_cheap_now()
             override_until = self.override_until
 
         now = time.time()
@@ -295,6 +342,9 @@ class HotWaterControl:
                 "last_error": self.last_error,
                 "current_price": self.current_price,
                 "in_cheap_block": self.in_cheap_block,
+                "cheap_now": self._is_cheap_now(),
+                "cheap_hours": self.cheap_hours,
+                "cheap_hours_today": sorted(self._cheap_set) if self.cheap_hours > 0 else [],
                 "avg_today": self.avg_today,
                 "avg_tomorrow": self.avg_tomorrow,
                 "prices_today": self.prices_today,
