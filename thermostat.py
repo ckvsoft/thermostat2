@@ -1748,8 +1748,12 @@ class ThermostatApp(App):
             altHeaterLabel.pos = (430, 165)
             altHeaterValueLabel.pos = (575, 163)
 
-            altBatteryLabel.pos = (15, 225)
-            altBatteryValueLabel.pos = (145, 222)
+            # Akku-Zeile: per settings key "battery_line_pos": [x, y]
+            # (thermostat_settings.json) tweakable without git roundtrips.
+            battery_pos = list(settings.get("battery_line_pos")) \
+                if settings.exists("battery_line_pos") else [35, 225]
+            altBatteryLabel.pos = (battery_pos[0], battery_pos[1])
+            altBatteryValueLabel.pos = (battery_pos[0] + 130, battery_pos[1] - 3)
 
             global priceBarsWidget
             priceBarsWidget = PriceBarsWidget(size=(800, 140), size_hint=(None, None), pos=(0, 0))
