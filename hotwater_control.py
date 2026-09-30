@@ -84,6 +84,11 @@ class HotWaterControl:
         self.timestamp = None
         self.seuss_reachable = False
         self.last_error = None
+        # Battery snapshot from SEUSS /api/battery (display only -- the
+        # "Akkuladezeile" on the sleep screen). Never touches control.
+        self.battery_soc_percent = None
+        self.battery_state = None
+        self.battery_capacity_wh = None
         # Cheap-hours selection (local date guarded): _cheap_set holds the
         # hour indices of the cheap_hours cheapest hours of today,
         # _prices_date is the local date of the last successful poll.
@@ -156,7 +161,27 @@ class HotWaterControl:
             self._prices_date = time.strftime("%Y-%m-%d")
             self._recompute_cheap_set()
 
+        self._poll_battery()
         self._notify_ui()
+
+    def _poll_battery(self):
+        """Fetch the battery snapshot from SEUSS /api/battery for the
+        Akkuladezeile (SOC + charging/discharging/idle). Display only:
+        a failure here never affects the heater control, it just leaves
+        the last known battery values on screen."""
+        url = f"{self.seuss_url}/api/battery"
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=self.http_timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            with self._lock:
+                self.last_error = f"battery poll: {e}"
+            return
+        with self._lock:
+            self.battery_soc_percent = data.get("soc_percent")
+            self.battery_state = data.get("state")
+            self.battery_capacity_wh = data.get("capacity_wh")
 
     def _set_offline(self, reason):
         with self._lock:
@@ -362,4 +387,7 @@ class HotWaterControl:
                 "heater_state": self.heater_state,
                 "last_decision": self.last_decision,
                 "override_until": self.override_until,
+                "battery_soc_percent": self.battery_soc_percent,
+                "battery_state": self.battery_state,
+                "battery_capacity_wh": self.battery_capacity_wh,
             }

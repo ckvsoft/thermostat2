@@ -201,7 +201,7 @@ MSG_SUBTYPE_FAIKIN = "faikin"
 #                                                                            #
 ##############################################################################
 
-THERMOSTAT_VERSION = "2.2.4"
+THERMOSTAT_VERSION = "2.3.0"
 
 # Debug settings
 
@@ -648,6 +648,8 @@ altTimeLabel = Label(text=timeLabel.text, size_hint=(None, None), font_size='32s
 altDecisionLabel = Label(text="", size_hint=(None, None), font_size='32sp', markup=True, text_size=(270, 55), halign='left', color=(0, 0, 0, 0))
 altHeaterLabel = Label(text="[b]" + _("Heater") + "[/b]:", size_hint=(None, None), font_size='26sp', markup=True, text_size=(190, 42), color=(0.45, 0.45, 0.45, 0.6))
 altHeaterValueLabel = Label(text="--", size_hint=(None, None), font_size='36sp', markup=True, text_size=(120, 55), color=(0.6, 0.6, 0.6, 0.55))
+altBatteryLabel = Label(text="[b]Akku[/b]:", size_hint=(None, None), font_size='26sp', markup=True, text_size=(130, 42), color=(0.45, 0.45, 0.45, 0.6))
+altBatteryValueLabel = Label(text="--", size_hint=(None, None), font_size='30sp', markup=True, text_size=(180, 48), color=(0.6, 0.6, 0.6, 0.55))
 altHourLabels = []
 
 # Price bar chart (sleep mode / minimalUI) - today only
@@ -1455,6 +1457,27 @@ def update_hotwater_ui(status):
                 w.update_bars(status)
             except Exception:
                 pass
+        # Akkuladezeile: SOC + charging/discharging/idle from
+        # SEUSS /api/battery (display only).
+        try:
+            soc = status.get("battery_soc_percent")
+            state = status.get("battery_state")
+            if soc is None or state is None:
+                altBatteryValueLabel.text = "--"
+                altBatteryValueLabel.color = (0.45, 0.45, 0.45, 0.55)
+            else:
+                state_text = {"charging": "Ladung",
+                              "discharging": "Entladung"}.get(state, state)
+                altBatteryValueLabel.text = \
+                    f"[b]{soc:.0f} %[/b] [size=20]({state_text})[/size]"
+                if state == "charging":
+                    altBatteryValueLabel.color = (0.0, 0.55, 0.0, 0.85)
+                elif state == "discharging":
+                    altBatteryValueLabel.color = (0.85, 0.3, 0.1, 0.85)
+                else:
+                    altBatteryValueLabel.color = (0.6, 0.6, 0.6, 0.8)
+        except Exception:
+            pass
 
     Clock.schedule_once(_apply, 0)
 
@@ -1725,6 +1748,9 @@ class ThermostatApp(App):
             altHeaterLabel.pos = (430, 165)
             altHeaterValueLabel.pos = (575, 163)
 
+            altBatteryLabel.pos = (55, 275)
+            altBatteryValueLabel.pos = (195, 272)
+
             global priceBarsWidget
             priceBarsWidget = PriceBarsWidget(size=(800, 140), size_hint=(None, None), pos=(0, 0))
 
@@ -1734,6 +1760,8 @@ class ThermostatApp(App):
             minUI.add_widget(altWaterValueLabel)
             minUI.add_widget(altHeaterLabel)
             minUI.add_widget(altHeaterValueLabel)
+            minUI.add_widget(altBatteryLabel)
+            minUI.add_widget(altBatteryValueLabel)
             minUI.add_widget(altDecisionLabel)
             minUI.add_widget(priceBarsWidget)
             minScreen.add_widget(minUI)
