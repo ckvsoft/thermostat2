@@ -648,8 +648,8 @@ altTimeLabel = Label(text=timeLabel.text, size_hint=(None, None), font_size='32s
 altDecisionLabel = Label(text="", size_hint=(None, None), font_size='32sp', markup=True, text_size=(270, 55), halign='left', color=(0, 0, 0, 0))
 altHeaterLabel = Label(text="[b]" + _("Heater") + "[/b]:", size_hint=(None, None), font_size='26sp', markup=True, text_size=(190, 42), color=(0.45, 0.45, 0.45, 0.6))
 altHeaterValueLabel = Label(text="--", size_hint=(None, None), font_size='36sp', markup=True, text_size=(120, 55), color=(0.6, 0.6, 0.6, 0.55))
-altBatteryLabel = Label(text="[b]Akku[/b]:", size_hint=(None, None), font_size='22sp', markup=True, text_size=(110, 28), color=(0.45, 0.45, 0.45, 0.6))
-altBatteryValueLabel = Label(text="--", size_hint=(None, None), font_size='24sp', markup=True, text_size=(300, 30), color=(0.6, 0.6, 0.6, 0.55))
+altBatteryLabel = Label(text="[b]Akku[/b]:", size_hint=(None, None), font_size='26sp', markup=True, text_size=(130, 42), color=(0.45, 0.45, 0.45, 0.6))
+altBatteryValueLabel = Label(text="--", size_hint=(None, None), font_size='30sp', markup=True, text_size=(200, 55), color=(0.6, 0.6, 0.6, 0.55))
 altHourLabels = []
 
 # Price bar chart (sleep mode / minimalUI) - today only
@@ -1748,8 +1748,8 @@ class ThermostatApp(App):
             altHeaterLabel.pos = (430, 165)
             altHeaterValueLabel.pos = (575, 163)
 
-            altBatteryLabel.pos = (15, 32)
-            altBatteryValueLabel.pos = (130, 30)
+            altBatteryLabel.pos = (15, 225)
+            altBatteryValueLabel.pos = (145, 222)
 
             global priceBarsWidget
             priceBarsWidget = PriceBarsWidget(size=(800, 140), size_hint=(None, None), pos=(0, 0))
