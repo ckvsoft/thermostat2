@@ -201,7 +201,7 @@ MSG_SUBTYPE_FAIKIN = "faikin"
 #                                                                            #
 ##############################################################################
 
-THERMOSTAT_VERSION = "2.3.0"
+THERMOSTAT_VERSION = "2.3.1"
 
 # Debug settings
 
@@ -1209,9 +1209,11 @@ def show_minimal_ui(dt):
 
 class PriceBarsWidget(Widget):
     """Horizontal colored timeline strip for the sleep screen.
-    24 segments for today's hours: green = cheap block, red = discharge,
-    gray = neutral. Past hours are dimmed. A white vertical line marks
-    the current time."""
+    24 segments for today's hours: green = cheap block & SEUSS charges,
+    olive = cheap block (household: run flexible loads now!) but the
+    battery skips the purchase, red = discharge, gray = neutral.
+    Past hours are dimmed. A white vertical line marks the current
+    time."""
 
     def update_bars(self, status):
         today = status.get("prices_today") or {}
@@ -1241,6 +1243,14 @@ class PriceBarsWidget(Widget):
                         Color(0.0, 0.35, 0.0, 0.4)
                     else:
                         Color(0.0, 0.8, 0.0, 0.95)
+                elif col == "olive":
+                    # Cheap block, but SEUSS skips the battery purchase
+                    # (need already covered). Still one of the cheap
+                    # hours of the day: good time for flexible loads.
+                    if is_past:
+                        Color(0.25, 0.25, 0.0, 0.45)
+                    else:
+                        Color(0.62, 0.62, 0.05, 0.95)
                 elif col == "red":
                     if is_past:
                         Color(0.4, 0.08, 0.05, 0.45)
