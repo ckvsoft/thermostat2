@@ -55,6 +55,10 @@ DEFAULTS = {
 class Config(object):
     """Read-only view on the settings store, falling back to DEFAULTS."""
 
+    # sentinel so that an explicit ``default=None`` stays distinguishable
+    # from "use the built-in default"
+    _MISSING = object()
+
     def __init__(self, path="thermostat_settings.json", defaults=None, store=None):
         if store is None:
             from kivy.storage.jsonstore import JsonStore
@@ -62,8 +66,8 @@ class Config(object):
         self._store = store
         self._defaults = DEFAULTS if defaults is None else defaults
 
-    def get(self, section, key, default=None):
-        if default is None:
+    def get(self, section, key, default=_MISSING):
+        if default is Config._MISSING:
             default = self._defaults.get(section, {}).get(key)
         if not self._store.exists(section):
             return default

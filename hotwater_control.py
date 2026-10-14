@@ -40,6 +40,7 @@ import json
 import threading
 import time
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 
 class HotWaterControl:
@@ -109,6 +110,11 @@ class HotWaterControl:
         # Optional callback receiving get_status() dict (UI update)
         self.ui_callback = None
 
+        # Single worker for the (up to http_timeout second) Shelly relay
+        # calls: one reusable thread instead of a fresh one per switch, so
+        # a slow/unreachable plug can not pile up threads.
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="shelly")
+
     # ------------------------------------------------------------------ lifecycle
 
     def start(self):
@@ -125,6 +131,8 @@ class HotWaterControl:
         if self._thread is not None:
             self._thread.join(timeout=5)
             self._thread = None
+        # let an in-flight Shelly switch finish, then release the worker
+        self._executor.shutdown(wait=True)
 
     # ------------------------------------------------------------------ polling
 
@@ -207,6 +215,9 @@ class HotWaterControl:
             lt = time.localtime()
             until_ts = time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday,
                                     23, 0, 0, 0, 0, -1))
+            if until_ts <= time.time():
+                # past 23:00 -> override until tomorrow 23:00
+                until_ts += 24 * 3600
         with self._lock:
             self.override_until = float(until_ts)
         self._apply("on", "manual override", force=True)
@@ -323,13 +334,9 @@ class HotWaterControl:
         self.heater_state = decision
         self.last_decision = reason
         # Run the (potentially slow, up to http_timeout seconds) Shelly
-        # HTTP call on a worker thread so we never block the Kivy UI
-        # thread that usually calls update_water_temp().
-        t = threading.Thread(
-            target=self._switch_shelly, args=(decision,),
-            daemon=True, name="shelly-switch",
-        )
-        t.start()
+        # HTTP call on the single worker thread so we never block the Kivy
+        # UI thread that usually calls update_water_temp().
+        self._executor.submit(self._switch_shelly, decision)
         self._notify_ui()
         return self.heater_state
 
@@ -339,7 +346,8 @@ class HotWaterControl:
             return
         url = f"http://{self.shelly_ip}/relay/{self.shelly_relay}?turn={action}"
         try:
-            urllib.request.urlopen(url, timeout=self.http_timeout).read()
+            with urllib.request.urlopen(url, timeout=self.http_timeout) as resp:
+                resp.read()
             self._set_error(None)
         except Exception as e:
             self._set_error(f"shelly {action} failed: {e}")

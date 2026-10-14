@@ -44,6 +44,7 @@ class Handlers(object):
         self.screen_mgr = None
         self.price_bars = None
         self._domestic_last = time.time()
+        self._domestic_timer = None
         self._min_ui_timer = None
 
     # -- domestic water ----------------------------------------------------
@@ -60,7 +61,10 @@ class Handlers(object):
                 self._show_water(value)
 
             self._domestic_last = time.time()
-            Clock.schedule_once(self.check_domestic_water_timeout, self.domestic_timeout)
+            if self._domestic_timer is not None:
+                self._domestic_timer.cancel()
+            self._domestic_timer = Clock.schedule_once(
+                self.check_domestic_water_timeout, self.domestic_timeout)
 
         except (json.JSONDecodeError, UnicodeDecodeError) as e:
             self._log(LOG_LEVEL_ERROR, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT,
@@ -75,10 +79,16 @@ class Handlers(object):
             self._show_water("n/a", with_units=False)
 
     def _show_water(self, value, with_units=True):
-        text = "[b]" + str(value) + (self.units if with_units else "") + "[/b]"
-        self.ui.currentWaterValueLabel.text = text
-        self.ui.altWaterValueLabel.text = text
-        self.ui.altWaterValueLabel.color = (0.6, 0.6, 0.6, 0.55)
+        # set_domestic_water runs on the paho MQTT thread; Kivy widgets may
+        # only be touched on the UI thread, so marshal the label writes
+        # through the Clock.
+        def _apply(dt):
+            text = "[b]" + str(value) + (self.units if with_units else "") + "[/b]"
+            self.ui.currentWaterValueLabel.text = text
+            self.ui.altWaterValueLabel.text = text
+            self.ui.altWaterValueLabel.color = (0.6, 0.6, 0.6, 0.55)
+
+        Clock.schedule_once(_apply, 0)
 
     # -- hot water sleep-screen labels -------------------------------------
     def update_hotwater_ui(self, status):

@@ -26,16 +26,16 @@ class Commands(object):
         self.script = script
 
     def get_ip_address(self):
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.settimeout(10)
-        try:
-            s.connect(("8.8.8.8", 80))  # Google DNS server
-            ip = s.getsockname()[0]
-            self._log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/ip", ip, timestamp=False)
-        except socket.error:
-            ip = "127.0.0.1"
-            self._log(LOG_LEVEL_ERROR, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/ip",
-                      "FAILED to get ip address, returning " + ip, timestamp=False)
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.settimeout(10)
+            try:
+                s.connect(("8.8.8.8", 80))  # Google DNS server
+                ip = s.getsockname()[0]
+                self._log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/ip", ip, timestamp=False)
+            except socket.error:
+                ip = "127.0.0.1"
+                self._log(LOG_LEVEL_ERROR, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/ip",
+                          "FAILED to get ip address, returning " + ip, timestamp=False)
         return ip
 
     def get_version(self, message):
@@ -60,7 +60,7 @@ class Commands(object):
         except Exception:
             pass
 
-        self.logger.close()
+        self.logger.flush()
         self.mqtt.stop()
 
         os.execl(sys.executable, 'python', self.script, *sys.argv[1:])  # does not return

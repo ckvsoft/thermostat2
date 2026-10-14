@@ -43,7 +43,9 @@ class Logger(object):
         self.level = LOG_LEVELS.get(level_name, LOG_LEVEL_NONE)
 
         if channel == "file":
-            self.file = open(log_file_name, "a")
+            # line-buffered so a crash never loses more than the current
+            # line (the OS still batches the actual disk writes)
+            self.file = open(log_file_name, "a", buffering=1, encoding="utf-8")
 
     @staticmethod
     def _ts():
@@ -75,11 +77,18 @@ class Logger(object):
             topic = self._log_topic(label, child_device, msg_type, msg_subtype)
             self._publish(topic, ts + msg)
 
-    def close(self):
+    def flush(self):
         if self.file is not None:
             try:
                 self.file.flush()
                 os.fsync(self.file.fileno())
+            except Exception:
+                pass
+
+    def close(self):
+        if self.file is not None:
+            try:
+                self.flush()
                 self.file.close()
             except Exception:
                 pass
