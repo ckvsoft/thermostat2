@@ -51,6 +51,7 @@ from weather import build_urls, get_weather, get_cardinal_direction, get_precip_
 from app_state import AppState
 from web import WebInterface
 from scheduler import Scheduler
+import ui
 
 try:
     from hotwater_control import HotWaterControl
@@ -531,58 +532,6 @@ log(LOG_LEVEL_INFO, CHILD_DEVICE_PIR, MSG_SUBTYPE_TRIPPED, str(pirPin), timestam
 #                                                                            #
 ##############################################################################
 
-controlColours = {
-    "normal": (1.0, 1.0, 1.0, 1.0),
-    _("Cool"): (0.0, 0.0, 1.0, 0.4),
-    _("Heat"): (1.0, 0.0, 0.0, 1.0),
-    _("Fan"): (0.0, 1.0, 0.0, 0.4),
-    _("Hold"): (0.0, 1.0, 0.0, 0.4)
-}
-
-def setControlState(control, state):
-    with thermostatLock:
-        try:
-            control.state = state
-            if state == "normal":
-                control.background_color = controlColours["normal"]
-            else:
-                control.background_color = controlColours[control.text.replace("[b]", "").replace("[/b]", "")]
-
-            controlLabel = control.text.replace("[b]", "").replace("[/b]", "").lower()
-            log(LOG_LEVEL_STATE, controlLabel + CHILD_DEVICE_SUFFIX_UICONTROL, MSG_SUBTYPE_BINARY_STATUS,
-                "0" if state == "normal" else "1")
-
-        except Exception:
-            traceback.print_exc()
-
-coolControl = ToggleButton(text="[b]" + _("Cool") + "[/b]",
-                           markup=True,
-                           size_hint=(None, None)
-                           )
-
-setControlState(coolControl, "down" if app.cool else "normal")
-
-heatControl = ToggleButton(text="[b]" + _("Heat") + "[/b]",
-                           markup=True,
-                           size_hint=(None, None)
-                           )
-
-setControlState(heatControl, "down" if app.heat else "normal")
-
-fanControl = ToggleButton(text="[b]" + _("Fan") + "[/b]",
-                          markup=True,
-                          size_hint=(None, None)
-                          )
-
-setControlState(fanControl, "down" if app.fan else "normal")
-
-holdControl = ToggleButton(text="[b]" + _("Hold") + "[/b]",
-                           markup=True,
-                           size_hint=(None, None)
-                           )
-
-setControlState(holdControl, "down" if app.hold else "normal")
-
 def get_status_info():
     with thermostatLock:
         sched = "None"
@@ -607,49 +556,26 @@ def get_status_info():
 
         return status_info_json
 
-versionLabel = Label(text="Thermostat v" + str(THERMOSTAT_VERSION), size_hint=(None, None), font_size='10sp', markup=True, text_size=(150, 20))
-currentLabel = Label(text="[b]" + str(app.current_temp) + scaleUnits + "[/b]", size_hint=(None, None), font_size='100sp', markup=True, text_size=(300, 200))
-currentWaterLabel = Label(text="[b]" + _("Domestic water") + "[/b]:", size_hint=(None, None), font_size='25sp', markup=True, text_size=(200, 100))
-currentWaterValueLabel = Label(text=str(app.domestic_water) + scaleUnits, size_hint=(None, None), font_size='25sp', markup=True, text_size=(100, 100))
+def _ui_log_binary(control_label, value):
+    log(LOG_LEVEL_STATE, control_label + CHILD_DEVICE_SUFFIX_UICONTROL, MSG_SUBTYPE_BINARY_STATUS, value)
 
-altCurLabel = Label(text=currentLabel.text, size_hint=(None, None), font_size='80sp', markup=True, text_size=(300, 120), color=(0.5, 0.5, 0.5, 0.35))
-altWaterLabel = Label(text=currentWaterLabel.text, size_hint=(None, None), font_size='26sp', markup=True, text_size=(190, 42), color=(0.45, 0.45, 0.45, 0.6))
-altWaterValueLabel = Label(text=currentWaterValueLabel.text, size_hint=(None, None), font_size='36sp', markup=True, text_size=(190, 55), color=(0.6, 0.6, 0.6, 0.55))
 
-setLabel = Label(text="  Set\n[b]" + str(app.set_temp) + scaleUnits + "[/b]", size_hint=(None, None), font_size='25sp', markup=True, text_size=(100, 100))
-
-status_info = json.loads(get_status_info())
-
-statusHeatLabel = Label(text=_("Heat") + ":", size_hint=(None, None), font_size='20sp', markup=True, text_size=(90, 20), halign='left')
-statusCoolLabel = Label(text=_("Cool") + ":", size_hint=(None, None), font_size='20sp', markup=True, text_size=(90, 20), halign='left')
-statusFanLabel = Label(text=_("Fan") + ":", size_hint=(None, None), font_size='20sp', markup=True, text_size=(90, 20), halign='left')
-statusSchedLabel = Label(text=_("Sched") + ":", size_hint=(None, None), font_size='20sp', markup=True, text_size=(90, 20), halign='left')
-
-statusHeatValueLabel = Label(text=status_info['heat'], size_hint=(None, None), font_size='20sp', markup=True, text_size=(70, 20), halign='left')
-statusCoolValueLabel = Label(text=status_info['cool'], size_hint=(None, None), font_size='20sp', markup=True, text_size=(70, 20), halign='left')
-statusFanValueLabel = Label(text=status_info['fan'], size_hint=(None, None), font_size='20sp', markup=True, text_size=(70, 20), halign='left')
-statusSchedValueLabel = Label(text=status_info['sched'], size_hint=(None, None), font_size='20sp', markup=True, text_size=(70, 20), halign='left')
-
-dateLabel = Label(text="[b]" + time.strftime("%a %d. %b %Y") + "[/b]", size_hint=(None, None), font_size='20sp', markup=True, text_size=(270, 40))
-
-timeStr = time.strftime("%H:%M")
-
-timeLabel = Label(text="[b]" + (timeStr if timeStr[0:1] != "0" else timeStr[1:]) + "[/b]", size_hint=(None, None), font_size='40sp', markup=True, text_size=(180, 75))
-altTimeLabel = Label(text=timeLabel.text, size_hint=(None, None), font_size='32sp', markup=True, text_size=(160, 55), color=(0.5, 0.5, 0.5, 0.6))
-
-# Hotwater / price display labels (sleep mode / minimalUI)
-altDecisionLabel = Label(text="", size_hint=(None, None), font_size='32sp', markup=True, text_size=(270, 55), halign='left', color=(0, 0, 0, 0))
-altHeaterLabel = Label(text="[b]" + _("Heater") + "[/b]:", size_hint=(None, None), font_size='26sp', markup=True, text_size=(190, 42), color=(0.45, 0.45, 0.45, 0.6))
-altHeaterValueLabel = Label(text="--", size_hint=(None, None), font_size='36sp', markup=True, text_size=(120, 55), color=(0.6, 0.6, 0.6, 0.55))
-altBatteryLabel = Label(text="[b]Akku[/b]:", size_hint=(None, None), font_size='26sp', markup=True, text_size=(130, 42), color=(0.45, 0.45, 0.45, 0.6))
-altBatteryValueLabel = Label(text="--", size_hint=(None, None), font_size='30sp', markup=True, text_size=(200, 55), color=(0.6, 0.6, 0.6, 0.55))
-altHourLabels = []
+ui.create(
+    app=app,
+    status_provider=get_status_info,
+    min_temp=minTemp,
+    max_temp=maxTemp,
+    temp_step=tempStep,
+    units=scaleUnits,
+    version=THERMOSTAT_VERSION,
+    log_binary=_ui_log_binary,
+    lock=thermostatLock,
+)
 
 # Price bar chart (sleep mode / minimalUI) - today only
 priceBarsWidget = None
 PRICE_BAR_HOURS = 24
 
-tempSlider = Slider(orientation='vertical', min=minTemp, max=maxTemp, step=tempStep, value=app.set_temp, size_hint=(None, None))
 
 screenMgr = None
 
@@ -689,44 +615,6 @@ weatherRefreshInterval = cfg.get("weather", "weatherRefreshInterval") * 60
 forecastRefreshInterval = cfg.get("weather", "forecastRefreshInterval") * 60
 weatherExceptionInterval = cfg.get("weather", "weatherExceptionInterval") * 60
 
-weatherSummaryLabel = Label(text="", size_hint=(None, None), font_size='20sp', markup=True, text_size=(200, 20))
-weatherImg = Image(source="web/images/na.png", size_hint=(None, None))
-weatherTempLabel = Label(text=_("Temp") + ":", size_hint=(None, None), font_size='20sp', markup=True, text_size=(240, 20), valign="top", halign='left')
-weatherTempValueLabel = Label(text="N/A", size_hint=(None, None), font_size='20sp', markup=True, text_size=(160, 20), valign="top", halign='left')
-weatherHumidityLabel = Label(text=_("Humidity") + ":", size_hint=(None, None), font_size='20sp', markup=True, text_size=(240, 20), valign="top", halign='left')
-weatherHumidityValueLabel = Label(text="N/A", size_hint=(None, None), font_size='20sp', markup=True, text_size=(160, 20), valign="top", halign='left')
-weatherWindLabel = Label(text=_("Wind") + ":", size_hint=(None, None), font_size='20sp', markup=True, text_size=(240, 20), valign="top", halign='left')
-weatherWindValueLabel = Label(text="N/A", size_hint=(None, None), font_size='20sp', markup=True, text_size=(160, 20), valign="top", halign='left')
-weatherCloudsLabel = Label(text=_("Clouds") + ":", size_hint=(None, None), font_size='20sp', markup=True, text_size=(240, 20), valign="top", halign='left')
-weatherCloudsValueLabel = Label(text="N/A", size_hint=(None, None), font_size='20sp', markup=True, text_size=(160, 20), valign="top", halign='left')
-weatherSunLabel = Label(text=_("Sun") + ":", size_hint=(None, None), font_size='20sp', markup=True, text_size=(240, 20), valign="top", halign='left')
-weatherSunValueLabel = Label(text="N/A", size_hint=(None, None), font_size='20sp', markup=True, text_size=(160, 20), valign="top", halign='left')
-
-forecastTodaySummaryLabel = Label(text="", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 15))
-forecastTodayImg = Image(source="web/images/na.png", size_hint=(None, None))
-forecastTodayHighLabel = Label(text=_("High") + ":", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 16), valign="top", halign='left')
-forecastTodayHighValueLabel = Label(text="N/A", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
-forecastTodayHumidityLabel = Label(text=_("Humidity") + ":", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 16), valign="top", halign='left')
-forecastTodayHumidityValueLabel = Label(text="N/A", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
-forecastTodayWindLabel = Label(text=_("Wind") + ":", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 16), valign="top", halign='left')
-forecastTodayWindValueLabel = Label(text="N/A", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
-forecastTodayCloudsLabel = Label(text=_("Clouds") + ":", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 16), valign="top", halign='left')
-forecastTodayCloudsValueLabel = Label(text="N/A", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
-forecastTodayRainLabel = Label(text="", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 16), valign="top", halign='left')
-forecastTodayRainValueLabel = Label(text="", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
-
-forecastTomoSummaryLabel = Label(text="", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 15))
-forecastTomoImg = Image(source="web/images/na.png", size_hint=(None, None))
-forecastTomoHighLabel = Label(text=_("High") + ":", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 16), valign="top", halign='left')
-forecastTomoHighValueLabel = Label(text="N/A", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
-forecastTomoHumidityLabel = Label(text=_("Humidity") + ":", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 16), valign="top", halign='left')
-forecastTomoHumidityValueLabel = Label(text="N/A", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
-forecastTomoWindLabel = Label(text=_("Wind") + ":", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 16), valign="top", halign='left')
-forecastTomoWindValueLabel = Label(text="N/A", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
-forecastTomoCloudsLabel = Label(text=_("Clouds") + ":", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 16), valign="top", halign='left')
-forecastTomoCloudsValueLabel = Label(text="N/A", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
-forecastTomoRainLabel = Label(text="", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 16), valign="top", halign='left')
-forecastTomoRainValueLabel = Label(text="", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
 
 def display_current_weather(dt):
     with weatherLock:
@@ -735,28 +623,28 @@ def display_current_weather(dt):
         try:
             weather = get_weather(weatherURLCurrent, weatherURLTimeout)
 
-            weatherImg.source = "web/images/" + weather["weather"][0]["icon"] + ".png"
+            ui.weatherImg.source = "web/images/" + weather["weather"][0]["icon"] + ".png"
 
-            weatherSummaryLabel.text = "[b]" + weather["weather"][0]["description"].title() + "[/b]"
+            ui.weatherSummaryLabel.text = "[b]" + weather["weather"][0]["description"].title() + "[/b]"
 
-            weatherTempValueLabel.text = str(int(round(weather["main"]["temp"], 0))) + scaleUnits
-            weatherHumidityValueLabel.text = str(weather["main"]["humidity"]) + "%"
-            weatherWindValueLabel.text = str(int(round(weather["wind"]["speed"] * windFactor))) + windUnits + " " + get_cardinal_direction(weather["wind"]["deg"])
-            weatherCloudsValueLabel.text = str(weather["clouds"]["all"]) + "%"
-            weatherSunValueLabel.text = time.strftime("%H:%M", time.localtime(weather["sys"]["sunrise"])) + ", " + time.strftime("%H:%M", time.localtime(weather["sys"]["sunset"])) + ""
+            ui.weatherTempValueLabel.text = str(int(round(weather["main"]["temp"], 0))) + scaleUnits
+            ui.weatherHumidityValueLabel.text = str(weather["main"]["humidity"]) + "%"
+            ui.weatherWindValueLabel.text = str(int(round(weather["wind"]["speed"] * windFactor))) + windUnits + " " + get_cardinal_direction(weather["wind"]["deg"])
+            ui.weatherCloudsValueLabel.text = str(weather["clouds"]["all"]) + "%"
+            ui.weatherSunValueLabel.text = time.strftime("%H:%M", time.localtime(weather["sys"]["sunrise"])) + ", " + time.strftime("%H:%M", time.localtime(weather["sys"]["sunset"])) + ""
 
             log(LOG_LEVEL_INFO, CHILD_DEVICE_WEATHER_CURR, MSG_SUBTYPE_TEXT, json.dumps(weather))
 
         except Exception as e:
             interval = weatherExceptionInterval
 
-            weatherImg.source = "web/images/na.png"
-            weatherSummaryLabel.text = "N/A"
-            weatherTempValueLabel.text = "N/A"
-            weatherHumidityValueLabel.text = "N/A"
-            weatherWindValueLabel.text = "N/A"
-            weatherCloudsValueLabel.text = "N/A"
-            weatherSunValueLabel.text = "N/A"
+            ui.weatherImg.source = "web/images/na.png"
+            ui.weatherSummaryLabel.text = "N/A"
+            ui.weatherTempValueLabel.text = "N/A"
+            ui.weatherHumidityValueLabel.text = "N/A"
+            ui.weatherWindValueLabel.text = "N/A"
+            ui.weatherCloudsValueLabel.text = "N/A"
+            ui.weatherSunValueLabel.text = "N/A"
 
             log(LOG_LEVEL_ERROR, CHILD_DEVICE_WEATHER_CURR, MSG_SUBTYPE_TEXT, "Update FAILED!")
             log(LOG_LEVEL_ERROR, CHILD_DEVICE_WEATHER_CURR, MSG_SUBTYPE_TEXT, f"Exception {e}")
@@ -774,45 +662,45 @@ def display_forecast_weather(dt):
             today = forecast["list"][0]
             tomo = forecast["list"][1]
 
-            forecastTodayImg.source = "web/images/" + today["weather"][0]["icon"] + ".png"
-            forecastTodaySummaryLabel.text = "[b]" + today["weather"][0]["description"].title() + "[/b]"
-            forecastTodayHighValueLabel.text = str(int(round(today["temp"]["max"], 0))) + scaleUnits + ", " + _("Low") + ": " + str(int(round(today["temp"]["min"], 0))) + scaleUnits
-            forecastTodayHumidityValueLabel.text = str(today["humidity"]) + "%"
-            forecastTodayWindValueLabel.text = str(int(round(today["speed"] * windFactor))) + windUnits + " " + get_cardinal_direction(today["deg"])
-            forecastTodayCloudsValueLabel.text = str(today["clouds"]) + "%"
+            ui.forecastTodayImg.source = "web/images/" + today["weather"][0]["icon"] + ".png"
+            ui.forecastTodaySummaryLabel.text = "[b]" + today["weather"][0]["description"].title() + "[/b]"
+            ui.forecastTodayHighValueLabel.text = str(int(round(today["temp"]["max"], 0))) + scaleUnits + ", " + _("Low") + ": " + str(int(round(today["temp"]["min"], 0))) + scaleUnits
+            ui.forecastTodayHumidityValueLabel.text = str(today["humidity"]) + "%"
+            ui.forecastTodayWindValueLabel.text = str(int(round(today["speed"] * windFactor))) + windUnits + " " + get_cardinal_direction(today["deg"])
+            ui.forecastTodayCloudsValueLabel.text = str(today["clouds"]) + "%"
 
             rainValueText = ""
             if "rain" in today or "snow" in today:
                 if "rain" in today:
-                    forecastTodayRainLabel.text = _("Rain") + ":"
+                    ui.forecastTodayRainLabel.text = _("Rain") + ":"
                     rainValueText = get_precip_amount(today["rain"], precipFactor, precipRound, tempScale) + precipUnits
                     if "snow" in today:
                         rainValueText += ", " + _("Snow") + ": " + get_precip_amount(today["snow"], precipFactor, precipRound, tempScale) + precipUnits
                 else:
-                    forecastTodayRainLabel.text = _("Snow") + ":"
+                    ui.forecastTodayRainLabel.text = _("Snow") + ":"
                     rainValueText = get_precip_amount(today["snow"], precipFactor, precipRound, tempScale) + precipUnits
 
-            forecastTodayRainValueLabel.text = rainValueText
+            ui.forecastTodayRainValueLabel.text = rainValueText
 
-            forecastTomoImg.source = "web/images/" + tomo["weather"][0]["icon"] + ".png"
-            forecastTomoSummaryLabel.text = "[b]" + tomo["weather"][0]["description"].title() + "[/b]"
-            forecastTomoHighValueLabel.text = str(int(round(tomo["temp"]["max"], 0))) + scaleUnits + ", " + _("Low") + ": " + str(int(round(tomo["temp"]["min"], 0))) + scaleUnits
-            forecastTomoHumidityValueLabel.text = str(tomo["humidity"]) + "%"
-            forecastTomoWindValueLabel.text = str(int(round(tomo["speed"] * windFactor))) + windUnits + " " + get_cardinal_direction(tomo["deg"])
-            forecastTomoCloudsValueLabel.text = str(tomo["clouds"]) + "%"
+            ui.forecastTomoImg.source = "web/images/" + tomo["weather"][0]["icon"] + ".png"
+            ui.forecastTomoSummaryLabel.text = "[b]" + tomo["weather"][0]["description"].title() + "[/b]"
+            ui.forecastTomoHighValueLabel.text = str(int(round(tomo["temp"]["max"], 0))) + scaleUnits + ", " + _("Low") + ": " + str(int(round(tomo["temp"]["min"], 0))) + scaleUnits
+            ui.forecastTomoHumidityValueLabel.text = str(tomo["humidity"]) + "%"
+            ui.forecastTomoWindValueLabel.text = str(int(round(tomo["speed"] * windFactor))) + windUnits + " " + get_cardinal_direction(tomo["deg"])
+            ui.forecastTomoCloudsValueLabel.text = str(tomo["clouds"]) + "%"
 
             rainValueText = ""
             if "rain" in tomo or "snow" in tomo:
                 if "rain" in tomo:
-                    forecastTomoRainLabel.text = _("Rain") + ":"
+                    ui.forecastTomoRainLabel.text = _("Rain") + ":"
                     rainValueText = get_precip_amount(tomo["rain"], precipFactor, precipRound, tempScale) + precipUnits
                     if "snow" in tomo:
                         rainValueText += ", " + _("Snow") + ": " + get_precip_amount(tomo["snow"], precipFactor, precipRound, tempScale) + precipUnits
                 else:
-                    forecastTomoRainLabel.text = _("Snow") + ":"
+                    ui.forecastTomoRainLabel.text = _("Snow") + ":"
                     rainValueText = get_precip_amount(tomo["snow"], precipFactor, precipRound, tempScale) + precipUnits
 
-            forecastTomoRainValueLabel.text = rainValueText
+            ui.forecastTomoRainValueLabel.text = rainValueText
 
             log(LOG_LEVEL_INFO, CHILD_DEVICE_WEATHER_CURR, MSG_SUBTYPE_TEXT, json.dumps(today["weather"][0]))
             log(LOG_LEVEL_INFO, CHILD_DEVICE_WEATHER_CURR, MSG_SUBTYPE_TEXT, json.dumps(tomo["weather"][0]))
@@ -820,25 +708,25 @@ def display_forecast_weather(dt):
         except Exception as e:
             interval = weatherExceptionInterval
 
-            forecastTodayImg.source = "web/images/na.png"
-            forecastTodaySummaryLabel.text = ""
-            forecastTodayRainLabel.text = ""
-            forecastTodayRainValueLabel.text = ""
-            forecastTodayHighValueLabel.text = "N/A"
-            forecastTodayHumidityValueLabel.text = "N/A"
-            forecastTodayWindValueLabel.text = "N/A"
-            forecastTodayCloudsValueLabel.text = "N/A"
-            forecastTodayRainLabel.text = ""
-            forecastTodayRainValueLabel.text = ""
+            ui.forecastTodayImg.source = "web/images/na.png"
+            ui.forecastTodaySummaryLabel.text = ""
+            ui.forecastTodayRainLabel.text = ""
+            ui.forecastTodayRainValueLabel.text = ""
+            ui.forecastTodayHighValueLabel.text = "N/A"
+            ui.forecastTodayHumidityValueLabel.text = "N/A"
+            ui.forecastTodayWindValueLabel.text = "N/A"
+            ui.forecastTodayCloudsValueLabel.text = "N/A"
+            ui.forecastTodayRainLabel.text = ""
+            ui.forecastTodayRainValueLabel.text = ""
 
-            forecastTomoImg.source = "web/images/na.png"
-            forecastTomoSummaryLabel.text = ""
-            forecastTomoHighValueLabel.text = "N/A"
-            forecastTomoHumidityValueLabel.text = "N/A"
-            forecastTomoWindValueLabel.text = "N/A"
-            forecastTomoCloudsValueLabel.text = "N/A"
-            forecastTomoRainLabel.text = ""
-            forecastTomoRainValueLabel.text = ""
+            ui.forecastTomoImg.source = "web/images/na.png"
+            ui.forecastTomoSummaryLabel.text = ""
+            ui.forecastTomoHighValueLabel.text = "N/A"
+            ui.forecastTomoHumidityValueLabel.text = "N/A"
+            ui.forecastTomoWindValueLabel.text = "N/A"
+            ui.forecastTomoCloudsValueLabel.text = "N/A"
+            ui.forecastTomoRainLabel.text = ""
+            ui.forecastTomoRainValueLabel.text = ""
             log(LOG_LEVEL_ERROR, CHILD_DEVICE_WEATHER_FCAST_TODAY, MSG_SUBTYPE_TEXT, "Update FAILED!")
             log(LOG_LEVEL_ERROR, CHILD_DEVICE_WEATHER_FCAST_TODAY, MSG_SUBTYPE_TEXT, f"Exception {e}")
 
@@ -910,10 +798,10 @@ def change_system_settings():
             _last_persisted_state = current_state
 
         status_info = json.loads(get_status_info())
-        statusHeatValueLabel.text = status_info['heat']
-        statusCoolValueLabel.text = status_info['cool']
-        statusFanValueLabel.text = status_info['fan']
-        statusSchedValueLabel.text = status_info['sched']
+        ui.statusHeatValueLabel.text = status_info['heat']
+        ui.statusCoolValueLabel.text = status_info['cool']
+        ui.statusFanValueLabel.text = status_info['fan']
+        ui.statusSchedValueLabel.text = status_info['sched']
 
         if hpin_start != str(GPIO.input(heatPin)):
             log(LOG_LEVEL_STATE, CHILD_DEVICE_HEAT, MSG_SUBTYPE_BINARY_STATUS, "1" if GPIO.input(heatPin) else "0")
@@ -928,26 +816,26 @@ def change_system_settings():
 
 def control_callback(control):
     with thermostatLock:
-        setControlState(control, control.state)
+        ui.setControlState(control, control.state)
 
-        if control is coolControl:
+        if control is ui.coolControl:
             if control.state == "down":
-                setControlState(heatControl, "normal")
+                ui.setControlState(ui.heatControl, "normal")
                 app.heat = False
             app.cool = control.state == "down"
             scheduler.reload()
 
-        if control is heatControl:
+        if control is ui.heatControl:
             if control.state == "down":
-                setControlState(coolControl, "normal")
+                ui.setControlState(ui.coolControl, "normal")
                 app.cool = False
             app.heat = control.state == "down"
             scheduler.reload()
 
-        if control is fanControl:
+        if control is ui.fanControl:
             app.fan = control.state == "down"
 
-        if control is holdControl:
+        if control is ui.holdControl:
             app.hold = control.state == "down"
 
 
@@ -971,15 +859,15 @@ def check_sensor_temp(dt):
             except Exception as e:
                 log(LOG_LEVEL_ERROR, CHILD_DEVICE_TEMP, MSG_SUBTYPE_TEXT, f"Sensor read failed: {e}")
 
-        currentLabel.text = "[b]" + str(app.current_temp) + scaleUnits + "[/b]"
-        altCurLabel.text = currentLabel.text
+        ui.currentLabel.text = "[b]" + str(app.current_temp) + scaleUnits + "[/b]"
+        ui.altCurLabel.text = ui.currentLabel.text
 
-        dateLabel.text = "[b]" + time.strftime("%a %d. %b %Y") + "[/b]"
+        ui.dateLabel.text = "[b]" + time.strftime("%a %d. %b %Y") + "[/b]"
 
         timeStr = time.strftime("%H:%M")
 
-        timeLabel.text = ("[b]" + (timeStr if timeStr[0:1] != "0" else timeStr[1:]) + "[/b]").lower()
-        altTimeLabel.text = timeLabel.text
+        ui.timeLabel.text = ("[b]" + (timeStr if timeStr[0:1] != "0" else timeStr[1:]) + "[/b]").lower()
+        ui.altTimeLabel.text = ui.timeLabel.text
 
         change_system_settings()
 
@@ -994,7 +882,7 @@ def update_set_temp(slider, value):
     with thermostatLock:
         priorTemp = app.set_temp
         app.set_temp = round(slider.value, 1)
-        setLabel.text = "  Set\n[b]" + str(app.set_temp) + scaleUnits + "[/b]"
+        ui.setLabel.text = "  Set\n[b]" + str(app.set_temp) + scaleUnits + "[/b]"
         if priorTemp != app.set_temp:
             log(LOG_LEVEL_STATE, CHILD_DEVICE_UICONTROL_SLIDER, MSG_SUBTYPE_TEMPERATURE, str(app.set_temp))
 
@@ -1034,99 +922,6 @@ def show_minimal_ui(dt):
     with thermostatLock:
         screenMgr.current = "minimalUI"
         log(LOG_LEVEL_DEBUG, CHILD_DEVICE_SCREEN, MSG_SUBTYPE_TEXT, "Minimal")
-
-class PriceBarsWidget(Widget):
-    """Horizontal colored timeline strip for the sleep screen.
-    24 segments for today's hours: green = cheap block & SEUSS charges,
-    olive = cheap block (household: run flexible loads now!) but the
-    battery skips the purchase, red = discharge, gray = neutral.
-    Past hours are dimmed. A white vertical line marks the current
-    time."""
-
-    def update_bars(self, status):
-        today = status.get("prices_today") or {}
-        colors = status.get("colors_today") or {}
-        cheap = bool(status.get("cheap_now", status.get("in_cheap_block")))
-        self._redraw(today, colors, cheap, status)
-
-    def _redraw(self, today, colors, cheap, status):
-        self.canvas.clear()
-        if not today:
-            return
-        w, h = self.width, self.height
-        strip_h = int(h * 0.5)
-        strip_y = self.y + h - strip_h
-        hour_w = w / 24.0
-        now_hour = int(time.strftime("%H"))
-        now_min = int(time.strftime("%M"))
-        now_frac = now_hour + now_min / 60.0
-
-        with self.canvas:
-            for hr in range(24):
-                key = str(hr)
-                col = colors.get(key, "gray")
-                is_past = hr < now_hour
-                if col == "green":
-                    if is_past:
-                        Color(0.0, 0.35, 0.0, 0.4)
-                    else:
-                        Color(0.0, 0.8, 0.0, 0.95)
-                elif col == "olive":
-                    # Cheap block, but SEUSS skips the battery purchase
-                    # (need already covered). Still one of the cheap
-                    # hours of the day: good time for flexible loads.
-                    if is_past:
-                        Color(0.25, 0.25, 0.0, 0.45)
-                    else:
-                        Color(0.62, 0.62, 0.05, 0.95)
-                elif col == "red":
-                    if is_past:
-                        Color(0.4, 0.08, 0.05, 0.45)
-                    else:
-                        Color(0.9, 0.15, 0.1, 0.95)
-                else:
-                    if is_past:
-                        Color(0.2, 0.2, 0.2, 0.35)
-                    else:
-                        Color(0.4, 0.4, 0.4, 0.65)
-                x = self.x + hr * hour_w
-                Rectangle(pos=(x, strip_y), size=(hour_w - 1, strip_h))
-
-            now_x = self.x + now_frac * hour_w
-            Color(1, 1, 1, 0.7)
-            Rectangle(pos=(now_x - 1, strip_y - 5), size=(3, strip_h + 10))
-
-            # Hour numbers drawn directly on the same canvas as the bars
-            for hr in range(24):
-                tl = CoreLabel(text=f"{hr:02d}", font_size=15,
-                               color=(0.55, 0.55, 0.55, 0.8))
-                tl.refresh()
-                num_x = self.x + hr * hour_w + (hour_w - tl.texture.width) / 2
-                Rectangle(texture=tl.texture,
-                          pos=(num_x, self.y + 6),
-                          size=tl.texture.size)
-
-        if cheap:
-            altDecisionLabel.text = "[b]JA[/b] [size=18](" + "Strom günstig" + ")[/size]"
-            altDecisionLabel.color = (0.0, 0.55, 0.0, 0.6)
-        else:
-            altDecisionLabel.text = "[b]NEIN[/b] [size=18](" + "Strom teuer" + ")[/size]"
-            altDecisionLabel.color = (0.7, 0.1, 0.06, 0.6)
-
-        state = status.get("heater_state")
-        self._apply_heater_state(state)
-
-    def _apply_heater_state(self, state):
-        if state == "on":
-            altHeaterValueLabel.text = "[b]" + _("On") + "[/b]"
-            altHeaterValueLabel.color = (0.85, 0.5, 0.08, 0.7)
-        elif state == "off":
-            altHeaterValueLabel.text = "[b]" + _("Off") + "[/b]"
-            altHeaterValueLabel.color = (0.45, 0.45, 0.45, 0.5)
-        else:
-            altHeaterValueLabel.text = "--"
-            altHeaterValueLabel.color = (0.45, 0.45, 0.45, 0.5)
-
 
 class MinimalScreen(Screen):
     def _long_press_triggered(self, dt):
@@ -1247,7 +1042,7 @@ def setLogLevel(msg):
 
 def set_domestic_water(message):
     global domestic_key_value_pair
-    global currentWaterValueLabel, altWaterValueLabel, domestic_last_message_time
+    global domestic_last_message_time
     try:
         payload = message.payload
         if isinstance(payload, bytes):
@@ -1257,9 +1052,9 @@ def set_domestic_water(message):
         domestic_water_value = data.get(domestic_key_value_pair)
         if domestic_water_value is not None and app.domestic_water != domestic_water_value:
             app.domestic_water = domestic_water_value
-            currentWaterValueLabel.text = "[b]" + str(app.domestic_water) + scaleUnits + "[/b]"
-            altWaterValueLabel.text = "[b]" + str(app.domestic_water) + scaleUnits + "[/b]"
-            altWaterValueLabel.color = (0.6, 0.6, 0.6, 0.55)
+            ui.currentWaterValueLabel.text = "[b]" + str(app.domestic_water) + scaleUnits + "[/b]"
+            ui.altWaterValueLabel.text = "[b]" + str(app.domestic_water) + scaleUnits + "[/b]"
+            ui.altWaterValueLabel.color = (0.6, 0.6, 0.6, 0.55)
 
         domestic_last_message_time = time.time()
         Clock.schedule_once(check_domestic_water_timeout, domestic_timeout_duration)
@@ -1273,14 +1068,13 @@ def set_domestic_water(message):
 
 def check_domestic_water_timeout(dt):
     global domestic_last_message_time
-    global currentWaterValueLabel, altWaterValueLabel
 
     current_time = time.time()
     if current_time - domestic_last_message_time > domestic_timeout_duration:
         app.domestic_water = "n/a"
-        currentWaterValueLabel.text = "[b]" + str(app.domestic_water) + "[/b]"
-        altWaterValueLabel.text = "[b]" + str(app.domestic_water) + "[/b]"
-        altWaterValueLabel.color = (0.6, 0.6, 0.6, 0.55)
+        ui.currentWaterValueLabel.text = "[b]" + str(app.domestic_water) + "[/b]"
+        ui.altWaterValueLabel.text = "[b]" + str(app.domestic_water) + "[/b]"
+        ui.altWaterValueLabel.color = (0.6, 0.6, 0.6, 0.55)
 
 def update_hotwater_ui(status):
     """Update the sleep-mode labels from the HotWaterControl status.
@@ -1299,19 +1093,19 @@ def update_hotwater_ui(status):
             soc = status.get("battery_soc_percent")
             state = status.get("battery_state")
             if soc is None or state is None:
-                altBatteryValueLabel.text = "--"
-                altBatteryValueLabel.color = (0.45, 0.45, 0.45, 0.55)
+                ui.altBatteryValueLabel.text = "--"
+                ui.altBatteryValueLabel.color = (0.45, 0.45, 0.45, 0.55)
             else:
                 state_text = {"charging": "Ladung",
                               "discharging": "Entladung"}.get(state, state)
-                altBatteryValueLabel.text = \
+                ui.altBatteryValueLabel.text = \
                     f"[b]{soc:.0f} %[/b] [size=20]({state_text})[/size]"
                 if state == "charging":
-                    altBatteryValueLabel.color = (0.0, 0.55, 0.0, 0.85)
+                    ui.altBatteryValueLabel.color = (0.0, 0.55, 0.0, 0.85)
                 elif state == "discharging":
-                    altBatteryValueLabel.color = (0.85, 0.3, 0.1, 0.85)
+                    ui.altBatteryValueLabel.color = (0.85, 0.3, 0.1, 0.85)
                 else:
-                    altBatteryValueLabel.color = (0.6, 0.6, 0.6, 0.8)
+                    ui.altBatteryValueLabel.color = (0.6, 0.6, 0.6, 0.8)
         except Exception:
             pass
 
@@ -1416,159 +1210,159 @@ class ThermostatApp(App):
 
         wimg.bind(on_touch_down=show_reboot_dialog)
 
-        coolControl.bind(on_press=control_callback)
-        heatControl.bind(on_press=control_callback)
-        fanControl.bind(on_press=control_callback)
-        holdControl.bind(on_press=control_callback)
+        ui.coolControl.bind(on_press=control_callback)
+        ui.heatControl.bind(on_press=control_callback)
+        ui.fanControl.bind(on_press=control_callback)
+        ui.holdControl.bind(on_press=control_callback)
 
-        tempSlider.bind(on_touch_down=update_set_temp, on_touch_move=update_set_temp)
+        ui.tempSlider.bind(on_touch_down=update_set_temp, on_touch_move=update_set_temp)
 
 
         wimg.size = (80, 80)
         wimg.size_hint = (None, None)
         wimg.pos = (10, 380)
 
-        heatControl.size = (80, 80)
-        heatControl.pos = (680, 380)
+        ui.heatControl.size = (80, 80)
+        ui.heatControl.pos = (680, 380)
 
-        coolControl.size = (80, 80)
-        coolControl.pos = (680, 270)
+        ui.coolControl.size = (80, 80)
+        ui.coolControl.pos = (680, 270)
 
-        fanControl.size = (80, 80)
-        fanControl.pos = (680, 160)
+        ui.fanControl.size = (80, 80)
+        ui.fanControl.pos = (680, 160)
 
-        statusHeatLabel.pos = (635, 80)
-        statusCoolLabel.pos = (635, 60)
-        statusFanLabel.pos = (635, 40)
-        statusSchedLabel.pos = (635, 20)
-        statusHeatValueLabel.pos = (710, 80)
-        statusCoolValueLabel.pos = (710, 60)
-        statusFanValueLabel.pos = (710, 40)
-        statusSchedValueLabel.pos = (710, 20)
+        ui.statusHeatLabel.pos = (635, 80)
+        ui.statusCoolLabel.pos = (635, 60)
+        ui.statusFanLabel.pos = (635, 40)
+        ui.statusSchedLabel.pos = (635, 20)
+        ui.statusHeatValueLabel.pos = (710, 80)
+        ui.statusCoolValueLabel.pos = (710, 60)
+        ui.statusFanValueLabel.pos = (710, 40)
+        ui.statusSchedValueLabel.pos = (710, 20)
 
-        tempSlider.size = (100, 360)
-        tempSlider.pos = (570, 20)
+        ui.tempSlider.size = (100, 360)
+        ui.tempSlider.pos = (570, 20)
 
-        holdControl.size = (80, 80)
-        holdControl.pos = (480, 380)
+        ui.holdControl.size = (80, 80)
+        ui.holdControl.pos = (480, 380)
 
-        setLabel.pos = (590, 390)
+        ui.setLabel.pos = (590, 390)
 
-        currentLabel.pos = (390, 300)
-        currentWaterLabel.pos = (340, 235)
-        currentWaterValueLabel.pos = (450, 235)
+        ui.currentLabel.pos = (390, 300)
+        ui.currentWaterLabel.pos = (340, 235)
+        ui.currentWaterValueLabel.pos = (450, 235)
 
-        dateLabel.pos = (180, 370)
-        timeLabel.pos = (345, 380)
+        ui.dateLabel.pos = (180, 370)
+        ui.timeLabel.pos = (345, 380)
 
-        weatherImg.pos = (265, 160)
-        weatherSummaryLabel.pos = (430, 160)
-        weatherTempLabel.pos = (365, 135)
-        weatherTempValueLabel.pos = (450, 135)
-        weatherHumidityLabel.pos = (365, 110)
-        weatherHumidityValueLabel.pos = (450, 110)
-        weatherWindLabel.pos = (365, 85)
-        weatherWindValueLabel.pos = (450, 85)
-        weatherCloudsLabel.pos = (365, 60)
-        weatherCloudsValueLabel.pos = (450, 60)
-        weatherSunLabel.pos = (365, 35)
-        weatherSunValueLabel.pos = (450, 35)
+        ui.weatherImg.pos = (265, 160)
+        ui.weatherSummaryLabel.pos = (430, 160)
+        ui.weatherTempLabel.pos = (365, 135)
+        ui.weatherTempValueLabel.pos = (450, 135)
+        ui.weatherHumidityLabel.pos = (365, 110)
+        ui.weatherHumidityValueLabel.pos = (450, 110)
+        ui.weatherWindLabel.pos = (365, 85)
+        ui.weatherWindValueLabel.pos = (450, 85)
+        ui.weatherCloudsLabel.pos = (365, 60)
+        ui.weatherCloudsValueLabel.pos = (450, 60)
+        ui.weatherSunLabel.pos = (365, 35)
+        ui.weatherSunValueLabel.pos = (450, 35)
 
-        versionLabel.pos = (320, 0)
+        ui.versionLabel.pos = (320, 0)
 
         forecastTodayHeading = Label(text="[b]"+ _("Today") + "[/b]:", font_size='20sp', markup=True, size_hint=(None, None),
                                      pos=(0, 300))
 
-        forecastTodayImg.pos = (0, 275)
-        forecastTodaySummaryLabel.pos = (100, 275)
-        forecastTodayHighLabel.pos = (30, 248)
-        forecastTodayHighValueLabel.pos = (150, 248)
-        forecastTodayHumidityLabel.pos = (30, 231)
-        forecastTodayHumidityValueLabel.pos = (150, 231)
-        forecastTodayWindLabel.pos = (30, 214)
-        forecastTodayWindValueLabel.pos = (150, 214)
-        forecastTodayCloudsLabel.pos = (30, 197)
-        forecastTodayCloudsValueLabel.pos = (150, 197)
-        forecastTodayRainLabel.pos = (30, 180)
-        forecastTodayRainValueLabel.pos = (150, 180)
+        ui.forecastTodayImg.pos = (0, 275)
+        ui.forecastTodaySummaryLabel.pos = (100, 275)
+        ui.forecastTodayHighLabel.pos = (30, 248)
+        ui.forecastTodayHighValueLabel.pos = (150, 248)
+        ui.forecastTodayHumidityLabel.pos = (30, 231)
+        ui.forecastTodayHumidityValueLabel.pos = (150, 231)
+        ui.forecastTodayWindLabel.pos = (30, 214)
+        ui.forecastTodayWindValueLabel.pos = (150, 214)
+        ui.forecastTodayCloudsLabel.pos = (30, 197)
+        ui.forecastTodayCloudsValueLabel.pos = (150, 197)
+        ui.forecastTodayRainLabel.pos = (30, 180)
+        ui.forecastTodayRainValueLabel.pos = (150, 180)
 
         forecastTomoHeading = Label(text="[b]" + _("Tomorrow") + "[/b]:", font_size='20sp', markup=True, size_hint=(None, None),
                                     pos=(0, 130))
-        forecastTomoImg.pos = (0, 100)
-        forecastTomoSummaryLabel.pos = (100, 100)
-        forecastTomoHighLabel.pos = (30, 73)
-        forecastTomoHighValueLabel.pos = (150, 73)
-        forecastTomoHumidityLabel.pos = (30, 57)
-        forecastTomoHumidityValueLabel.pos = (150, 57)
-        forecastTomoWindLabel.pos = (30, 41)
-        forecastTomoWindValueLabel.pos = (150, 41)
-        forecastTomoCloudsLabel.pos = (30, 25)
-        forecastTomoCloudsValueLabel.pos = (150, 25)
-        forecastTomoRainLabel.pos = (30, 9)
-        forecastTomoRainValueLabel.pos = (150, 9)
+        ui.forecastTomoImg.pos = (0, 100)
+        ui.forecastTomoSummaryLabel.pos = (100, 100)
+        ui.forecastTomoHighLabel.pos = (30, 73)
+        ui.forecastTomoHighValueLabel.pos = (150, 73)
+        ui.forecastTomoHumidityLabel.pos = (30, 57)
+        ui.forecastTomoHumidityValueLabel.pos = (150, 57)
+        ui.forecastTomoWindLabel.pos = (30, 41)
+        ui.forecastTomoWindValueLabel.pos = (150, 41)
+        ui.forecastTomoCloudsLabel.pos = (30, 25)
+        ui.forecastTomoCloudsValueLabel.pos = (150, 25)
+        ui.forecastTomoRainLabel.pos = (30, 9)
+        ui.forecastTomoRainValueLabel.pos = (150, 9)
 
         thermostatUI.add_widget(wimg)
-        thermostatUI.add_widget(coolControl)
-        thermostatUI.add_widget(heatControl)
-        thermostatUI.add_widget(fanControl)
-        thermostatUI.add_widget(holdControl)
-        thermostatUI.add_widget(tempSlider)
-        thermostatUI.add_widget(currentLabel)
-        thermostatUI.add_widget(currentWaterLabel)
-        thermostatUI.add_widget(currentWaterValueLabel)
-        thermostatUI.add_widget(setLabel)
-        thermostatUI.add_widget(statusHeatLabel)
-        thermostatUI.add_widget(statusCoolLabel)
-        thermostatUI.add_widget(statusFanLabel)
-        thermostatUI.add_widget(statusSchedLabel)
-        thermostatUI.add_widget(statusHeatValueLabel)
-        thermostatUI.add_widget(statusCoolValueLabel)
-        thermostatUI.add_widget(statusFanValueLabel)
-        thermostatUI.add_widget(statusSchedValueLabel)
+        thermostatUI.add_widget(ui.coolControl)
+        thermostatUI.add_widget(ui.heatControl)
+        thermostatUI.add_widget(ui.fanControl)
+        thermostatUI.add_widget(ui.holdControl)
+        thermostatUI.add_widget(ui.tempSlider)
+        thermostatUI.add_widget(ui.currentLabel)
+        thermostatUI.add_widget(ui.currentWaterLabel)
+        thermostatUI.add_widget(ui.currentWaterValueLabel)
+        thermostatUI.add_widget(ui.setLabel)
+        thermostatUI.add_widget(ui.statusHeatLabel)
+        thermostatUI.add_widget(ui.statusCoolLabel)
+        thermostatUI.add_widget(ui.statusFanLabel)
+        thermostatUI.add_widget(ui.statusSchedLabel)
+        thermostatUI.add_widget(ui.statusHeatValueLabel)
+        thermostatUI.add_widget(ui.statusCoolValueLabel)
+        thermostatUI.add_widget(ui.statusFanValueLabel)
+        thermostatUI.add_widget(ui.statusSchedValueLabel)
 
-        thermostatUI.add_widget(dateLabel)
-        thermostatUI.add_widget(timeLabel)
-        thermostatUI.add_widget(weatherImg)
-        thermostatUI.add_widget(weatherSummaryLabel)
-        thermostatUI.add_widget(weatherTempLabel)
-        thermostatUI.add_widget(weatherTempValueLabel)
-        thermostatUI.add_widget(weatherHumidityLabel)
-        thermostatUI.add_widget(weatherHumidityValueLabel)
-        thermostatUI.add_widget(weatherWindLabel)
-        thermostatUI.add_widget(weatherWindValueLabel)
-        thermostatUI.add_widget(weatherCloudsLabel)
-        thermostatUI.add_widget(weatherCloudsValueLabel)
-        thermostatUI.add_widget(weatherSunLabel)
-        thermostatUI.add_widget(weatherSunValueLabel)
+        thermostatUI.add_widget(ui.dateLabel)
+        thermostatUI.add_widget(ui.timeLabel)
+        thermostatUI.add_widget(ui.weatherImg)
+        thermostatUI.add_widget(ui.weatherSummaryLabel)
+        thermostatUI.add_widget(ui.weatherTempLabel)
+        thermostatUI.add_widget(ui.weatherTempValueLabel)
+        thermostatUI.add_widget(ui.weatherHumidityLabel)
+        thermostatUI.add_widget(ui.weatherHumidityValueLabel)
+        thermostatUI.add_widget(ui.weatherWindLabel)
+        thermostatUI.add_widget(ui.weatherWindValueLabel)
+        thermostatUI.add_widget(ui.weatherCloudsLabel)
+        thermostatUI.add_widget(ui.weatherCloudsValueLabel)
+        thermostatUI.add_widget(ui.weatherSunLabel)
+        thermostatUI.add_widget(ui.weatherSunValueLabel)
 
-        thermostatUI.add_widget(versionLabel)
+        thermostatUI.add_widget(ui.versionLabel)
         thermostatUI.add_widget(forecastTodayHeading)
-        thermostatUI.add_widget(forecastTodayImg)
-        thermostatUI.add_widget(forecastTodaySummaryLabel)
-        thermostatUI.add_widget(forecastTodayHighLabel)
-        thermostatUI.add_widget(forecastTodayHighValueLabel)
-        thermostatUI.add_widget(forecastTodayHumidityLabel)
-        thermostatUI.add_widget(forecastTodayHumidityValueLabel)
-        thermostatUI.add_widget(forecastTodayWindLabel)
-        thermostatUI.add_widget(forecastTodayWindValueLabel)
-        thermostatUI.add_widget(forecastTodayCloudsLabel)
-        thermostatUI.add_widget(forecastTodayCloudsValueLabel)
-        thermostatUI.add_widget(forecastTodayRainLabel)
-        thermostatUI.add_widget(forecastTodayRainValueLabel)
+        thermostatUI.add_widget(ui.forecastTodayImg)
+        thermostatUI.add_widget(ui.forecastTodaySummaryLabel)
+        thermostatUI.add_widget(ui.forecastTodayHighLabel)
+        thermostatUI.add_widget(ui.forecastTodayHighValueLabel)
+        thermostatUI.add_widget(ui.forecastTodayHumidityLabel)
+        thermostatUI.add_widget(ui.forecastTodayHumidityValueLabel)
+        thermostatUI.add_widget(ui.forecastTodayWindLabel)
+        thermostatUI.add_widget(ui.forecastTodayWindValueLabel)
+        thermostatUI.add_widget(ui.forecastTodayCloudsLabel)
+        thermostatUI.add_widget(ui.forecastTodayCloudsValueLabel)
+        thermostatUI.add_widget(ui.forecastTodayRainLabel)
+        thermostatUI.add_widget(ui.forecastTodayRainValueLabel)
 
         thermostatUI.add_widget(forecastTomoHeading)
-        thermostatUI.add_widget(forecastTomoImg)
-        thermostatUI.add_widget(forecastTomoSummaryLabel)
-        thermostatUI.add_widget(forecastTomoHighLabel)
-        thermostatUI.add_widget(forecastTomoHighValueLabel)
-        thermostatUI.add_widget(forecastTomoHumidityLabel)
-        thermostatUI.add_widget(forecastTomoHumidityValueLabel)
-        thermostatUI.add_widget(forecastTomoWindLabel)
-        thermostatUI.add_widget(forecastTomoWindValueLabel)
-        thermostatUI.add_widget(forecastTomoCloudsLabel)
-        thermostatUI.add_widget(forecastTomoCloudsValueLabel)
-        thermostatUI.add_widget(forecastTomoRainLabel)
-        thermostatUI.add_widget(forecastTomoRainValueLabel)
+        thermostatUI.add_widget(ui.forecastTomoImg)
+        thermostatUI.add_widget(ui.forecastTomoSummaryLabel)
+        thermostatUI.add_widget(ui.forecastTomoHighLabel)
+        thermostatUI.add_widget(ui.forecastTomoHighValueLabel)
+        thermostatUI.add_widget(ui.forecastTomoHumidityLabel)
+        thermostatUI.add_widget(ui.forecastTomoHumidityValueLabel)
+        thermostatUI.add_widget(ui.forecastTomoWindLabel)
+        thermostatUI.add_widget(ui.forecastTomoWindValueLabel)
+        thermostatUI.add_widget(ui.forecastTomoCloudsLabel)
+        thermostatUI.add_widget(ui.forecastTomoCloudsValueLabel)
+        thermostatUI.add_widget(ui.forecastTomoRainLabel)
+        thermostatUI.add_widget(ui.forecastTomoRainValueLabel)
 
         layout = thermostatUI
 
@@ -1584,32 +1378,32 @@ class ThermostatApp(App):
                 Color(0.0, 0.0, 0.0, 1)
                 self.rect = Rectangle(size=(800, 480), pos=minUI.pos)
 
-            altCurLabel.pos = (390, 275)
-            altTimeLabel.pos = (45, 398)
-            altDecisionLabel.pos = (575, 398)
-            altWaterLabel.pos = (55, 165)
-            altWaterValueLabel.pos = (240, 163)
-            altHeaterLabel.pos = (430, 165)
-            altHeaterValueLabel.pos = (575, 163)
+            ui.altCurLabel.pos = (390, 275)
+            ui.altTimeLabel.pos = (45, 398)
+            ui.altDecisionLabel.pos = (575, 398)
+            ui.altWaterLabel.pos = (55, 165)
+            ui.altWaterValueLabel.pos = (240, 163)
+            ui.altHeaterLabel.pos = (430, 165)
+            ui.altHeaterValueLabel.pos = (575, 163)
 
             # battery line: per settings key "battery_line_pos": [x, y]
             # (thermostat_settings.json) tweakable without git roundtrips.
             battery_pos = list(cfg.value("battery_line_pos", [35, 225]))
-            altBatteryLabel.pos = (battery_pos[0], battery_pos[1])
-            altBatteryValueLabel.pos = (battery_pos[0] + 130, battery_pos[1] - 3)
+            ui.altBatteryLabel.pos = (battery_pos[0], battery_pos[1])
+            ui.altBatteryValueLabel.pos = (battery_pos[0] + 130, battery_pos[1] - 3)
 
             global priceBarsWidget
-            priceBarsWidget = PriceBarsWidget(size=(800, 140), size_hint=(None, None), pos=(0, 0))
+            priceBarsWidget = ui.PriceBarsWidget(size=(800, 140), size_hint=(None, None), pos=(0, 0))
 
-            minUI.add_widget(altCurLabel)
-            minUI.add_widget(altTimeLabel)
-            minUI.add_widget(altWaterLabel)
-            minUI.add_widget(altWaterValueLabel)
-            minUI.add_widget(altHeaterLabel)
-            minUI.add_widget(altHeaterValueLabel)
-            minUI.add_widget(altBatteryLabel)
-            minUI.add_widget(altBatteryValueLabel)
-            minUI.add_widget(altDecisionLabel)
+            minUI.add_widget(ui.altCurLabel)
+            minUI.add_widget(ui.altTimeLabel)
+            minUI.add_widget(ui.altWaterLabel)
+            minUI.add_widget(ui.altWaterValueLabel)
+            minUI.add_widget(ui.altHeaterLabel)
+            minUI.add_widget(ui.altHeaterValueLabel)
+            minUI.add_widget(ui.altBatteryLabel)
+            minUI.add_widget(ui.altBatteryValueLabel)
+            minUI.add_widget(ui.altDecisionLabel)
             minUI.add_widget(priceBarsWidget)
             minScreen.add_widget(minUI)
 
@@ -1645,15 +1439,15 @@ class ThermostatApp(App):
 
 def apply_set_temp(new_temp):
     app.set_temp = new_temp
-    setLabel.text = "  Set\n[b]" + str(app.set_temp) + scaleUnits + "[/b]"
-    tempSlider.value = app.set_temp
+    ui.setLabel.text = "  Set\n[b]" + str(app.set_temp) + scaleUnits + "[/b]"
+    ui.tempSlider.value = app.set_temp
 
 
 def apply_controls(heat, cool, fan, hold):
-    setControlState(heatControl, "down" if heat else "normal")
-    setControlState(coolControl, "down" if cool else "normal")
-    setControlState(fanControl, "down" if fan else "normal")
-    setControlState(holdControl, "down" if hold else "normal")
+    ui.setControlState(ui.heatControl, "down" if heat else "normal")
+    ui.setControlState(ui.coolControl, "down" if cool else "normal")
+    ui.setControlState(ui.fanControl, "down" if fan else "normal")
+    ui.setControlState(ui.holdControl, "down" if hold else "normal")
     app.heat = bool(heat)
     app.cool = bool(cool)
     app.fan = bool(fan)
