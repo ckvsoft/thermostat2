@@ -151,7 +151,7 @@ class FaikinController(object):
                 temp_diff = None
 
             if temp_diff is not None:
-                if temp_diff > 3.0:
+                if temp_diff > 1.0:
                     fan, demand = "1", 30
                 elif temp_diff > tolerance:
                     fan, demand = "2", 30
