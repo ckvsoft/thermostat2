@@ -30,7 +30,7 @@ except ImportError:
 
 try:
     from w1thermsensor import W1ThermSensor, Unit
-except (ImportError, OSError, RuntimeError, Exception) as e:
+except Exception as e:
     print(f"Fehler beim Laden von w1thermsensor: {e}")
     from FakeRPi.w1thermsensor import W1ThermSensor, Unit
 
@@ -54,7 +54,7 @@ from app import ThermostatApp
 from commands import Commands
 from mqtt import MqttService
 from logging_setup import (Logger, LOG_LEVEL_DEBUG, LOG_LEVEL_INFO,
-                           LOG_LEVEL_ERROR, LOG_LEVEL_STATE, LOG_LEVEL_NONE)
+                           LOG_LEVEL_ERROR, LOG_LEVEL_STATE)
 
 MSG_TYPE_PRESENTATION = "presentation"
 
@@ -101,7 +101,7 @@ MSG_SUBTYPE_CUSTOM = "custom"
 MSG_SUBTYPE_TEXT = "text"
 MSG_SUBTYPE_FAIKIN = "faikin"
 
-THERMOSTAT_VERSION = "2.4.0"
+THERMOSTAT_VERSION = "2.4.1"
 
 FAIKIN_CONTROL_HEARTBEAT = 60  # seconds between repeated control commands
 
@@ -186,7 +186,7 @@ class Thermostat(object):
         saved = self.state_store.get("state") if self.state_store.exists("state") else {}
         self.app_state = AppState(
             current_temp=22.0 if temp_scale == "metric" else 72.0,
-            set_temp=saved.get("setTemp", 22.0),
+            set_temp=saved.get("setTemp", 22.0 if temp_scale == "metric" else 72.0),
             heat=saved.get("heatControl") == "down",
             cool=saved.get("coolControl") == "down",
             fan=saved.get("fanControl") == "down",
@@ -546,6 +546,11 @@ class Thermostat(object):
 
     def shutdown(self):
         self.log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/shutdown", "Thermostat Shutting Down...")
+        if self.hotwater_control is not None:
+            try:
+                self.hotwater_control.stop()
+            except Exception:
+                pass
         try:
             GPIO.cleanup()
         except Exception:
