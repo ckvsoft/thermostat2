@@ -24,7 +24,7 @@ class Handlers(object):
     def __init__(self, app, ui, gpio, log, lock, hotwater, units,
                  domestic_key, domestic_timeout,
                  pir_pin, pir_ignore_from, pir_ignore_to,
-                 min_ui_timeout, get_price_bars, get_screen_mgr):
+                 min_ui_timeout):
         self.app = app
         self.ui = ui
         self.gpio = gpio
@@ -38,8 +38,8 @@ class Handlers(object):
         self.pir_ignore_from = pir_ignore_from
         self.pir_ignore_to = pir_ignore_to
         self.min_ui_timeout = min_ui_timeout
-        self._get_price_bars = get_price_bars
-        self._get_screen_mgr = get_screen_mgr
+        self.screen_mgr = None
+        self.price_bars = None
         self._domestic_last = time.time()
         self._min_ui_timer = None
 
@@ -80,7 +80,7 @@ class Handlers(object):
     # -- hot water sleep-screen labels -------------------------------------
     def update_hotwater_ui(self, status):
         def _apply(dt):
-            bars = self._get_price_bars()
+            bars = self.price_bars
             if bars is not None:
                 try:
                     bars.update_bars(status)
@@ -124,7 +124,7 @@ class Handlers(object):
                     if self.pir_ignore_from <= now < self.pir_ignore_to:
                         ignore = True
 
-                mgr = self._get_screen_mgr()
+                mgr = self.screen_mgr
                 if mgr is not None and mgr.current == "minimalUI" and not ignore:
                     mgr.current = "thermostatUI"
                     self.log_screen("Full")
@@ -133,7 +133,7 @@ class Handlers(object):
 
     def show_minimal_ui(self, dt):
         with self.lock:
-            mgr = self._get_screen_mgr()
+            mgr = self.screen_mgr
             if mgr is not None:
                 mgr.current = "minimalUI"
             self.log_screen("Minimal")

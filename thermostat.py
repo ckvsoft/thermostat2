@@ -32,15 +32,11 @@
 ##############################################################################
 
 import datetime
-import json
 import os
 import os.path
 import gettext
 # from gettext import gettext as _
-import socket
-import sys
 import threading
-import time
 
 from faikin import FaikinController
 from config import Config
@@ -50,7 +46,9 @@ from web import WebInterface
 from scheduler import Scheduler
 import ui
 from controller import ThermostatController
-from handlers import Handlers, MinimalScreen
+from handlers import Handlers
+from app import ThermostatApp
+from commands import Commands
 from mqtt import MqttService
 from logging_setup import (Logger, LOG_LEVEL_DEBUG, LOG_LEVEL_INFO,
                            LOG_LEVEL_ERROR, LOG_LEVEL_STATE, LOG_LEVEL_NONE)
@@ -63,7 +61,6 @@ except ImportError:
     hotwater_module_available = False
 
 import kivy
-from kivy.core.window import Window
 
 ##############################################################################
 #                                                                            #
@@ -73,21 +70,7 @@ from kivy.core.window import Window
 
 kivy.require('2.3.0')  # keep in sync with requirements.txt
 
-from kivy.app import App
-from kivy.uix.togglebutton import ToggleButton
-from kivy.uix.label import Label
-from kivy.uix.widget import Widget
-from kivy.core.text import Label as CoreLabel
-from kivy.uix.floatlayout import FloatLayout
-from kivy.uix.image import Image
-from kivy.uix.slider import Slider
-from kivy.clock import Clock
-from kivy.graphics import Color, Rectangle
 from kivy.storage.jsonstore import JsonStore
-from kivy.uix.screenmanager import ScreenManager, Screen, NoTransition
-from kivy.uix.popup import Popup
-from kivy.uix.button import Button
-from kivy.uix.boxlayout import BoxLayout
 
 ##############################################################################
 #                                                                            #
@@ -96,7 +79,6 @@ from kivy.uix.boxlayout import BoxLayout
 ##############################################################################
 
 import cherrypy
-import subprocess
 import locale
 
 ##############################################################################
@@ -207,7 +189,6 @@ debug = False
 useTestSchedule = False
 FAIKIN_CONTROL_HEARTBEAT = 60  # seconds between repeated control commands
 
-Window.show_cursor = False
 
 thermostatLock = threading.RLock()
 weatherLock = threading.Lock()
@@ -465,8 +446,6 @@ handlers = Handlers(
     pir_ignore_from=pirIgnoreFrom,
     pir_ignore_to=pirIgnoreTo,
     min_ui_timeout=minUITimeout,
-    get_price_bars=lambda: priceBarsWidget,
-    get_screen_mgr=lambda: screenMgr,
 )
 
 
@@ -487,11 +466,8 @@ ui.create(
 )
 
 # Price bar chart (sleep mode / minimalUI) - today only
-priceBarsWidget = None
-PRICE_BAR_HOURS = 24
 
 
-screenMgr = None
 
 
 ##############################################################################
@@ -562,62 +538,14 @@ weather_view = WeatherView(
 #                                                                            #
 ##############################################################################
 
-def get_ip_address():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.settimeout(10)
-    try:
-        s.connect(("8.8.8.8", 80))  # Google DNS server
-        ip = s.getsockname()[0]
-        log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/ip", ip, timestamp=False)
-    except socket.error:
-        ip = "127.0.0.1"
-        log(LOG_LEVEL_ERROR, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/ip",
-            "FAILED to get ip address, returning " + ip, timestamp=False)
-
-    return ip
-
-
-def getVersion(message):
-    payload = message.payload.decode('utf-8')
-
-    log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/getVersion",
-        f"Empfangene Nachricht: {payload}", single=True)
-    log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/getVersion",
-        f"Empfangszeitpunkt: {message.timestamp}", single=True)
-    print(f"Empfangene Nachricht: {payload}")
-    print(f"Empfangszeitpunkt: {message.timestamp}")
-    log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_VERSION, THERMOSTAT_VERSION)
-
-def restart(message):
-    payload = message.payload.decode('utf-8') if isinstance(message.payload, bytes) else str(message.payload)
-
-    log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/restart",
-        f"Thermostat restarting... ({payload})", single=True)
-
-    try:
-        GPIO.cleanup()
-    except Exception:
-        pass
-
-    logger.close()
-
-    mqtt.stop()
-
-    os.execl(sys.executable, 'python', __file__, *sys.argv[1:])  # does not return
-
-def setLogLevel(msg):
-    payload = msg.payload
-    if isinstance(payload, bytes):
-        payload = payload.decode('utf-8')
-    payload = payload.strip().lower()
-
-    if logger.set_level(payload):
-        log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/loglevel",
-            "LogLevel set to: " + payload)
-    else:
-        log(LOG_LEVEL_ERROR, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/loglevel",
-            "Invalid LogLevel: " + payload)
-
+commands = Commands(
+    log=log,
+    logger=logger,
+    mqtt=mqtt,
+    gpio=GPIO,
+    version=THERMOSTAT_VERSION,
+    script=__file__,
+)
 if mqtt.enabled:
     faikin = FaikinController(
         name=faikinName,
@@ -631,9 +559,9 @@ if mqtt.enabled:
         log_error=_faikin_log_error,
     )
 
-    mqtt.add_handler(mqtt.command_topic("restart"), lambda message: restart(message))
-    mqtt.add_handler(mqtt.command_topic("loglevel"), lambda message: setLogLevel(message))
-    mqtt.add_handler(mqtt.command_topic("version"), lambda message: getVersion(message))
+    mqtt.add_handler(mqtt.command_topic("restart"), lambda message: commands.restart(message))
+    mqtt.add_handler(mqtt.command_topic("loglevel"), lambda message: commands.set_log_level(message))
+    mqtt.add_handler(mqtt.command_topic("version"), lambda message: commands.get_version(message))
     mqtt.add_handler(mqtt.command_topic("state"), lambda message: controller.get_status_info())
     if domestic_water_enabled:
         mqtt.add_handler(domestic_water_topic, lambda message: handlers.set_domestic_water(message))
@@ -649,266 +577,6 @@ if mqtt.enabled:
 #       Kivy Thermostat App class                                            #
 #                                                                            #
 ##############################################################################
-
-class ThermostatApp(App):
-    def build(self):
-        global screenMgr
-
-        thermostatUI = FloatLayout(size=(800, 480))
-
-        with thermostatUI.canvas.before:
-            Color(0.0, 0.0, 0.0, 1)
-            self.rect = Rectangle(size=(800, 480), pos=thermostatUI.pos)
-
-
-        wimg = Image(source='web/images/logo.png')
-
-        def show_reboot_dialog(instance, touch):
-            if not instance.collide_point(*touch.pos):
-                return
-            content = BoxLayout(orientation='vertical', padding=10, spacing=10)
-            content.add_widget(Label(text="[b]Thermostat jetzt neu starten?[/b]",
-                                     font_size='22sp', markup=True))
-            btns = BoxLayout(orientation='horizontal',
-                             size_hint=(1, None), height=60, spacing=10)
-            btn_ok = Button(text="Reboot", size_hint=(1, 1))
-            btn_cancel = Button(text="Abbrechen", size_hint=(1, 1))
-            btns.add_widget(btn_ok)
-            btns.add_widget(btn_cancel)
-            content.add_widget(btns)
-            popup = Popup(title="Thermostat", content=content,
-                          size_hint=(0.6, 0.4), auto_dismiss=True)
-
-            def do_reboot(btn):
-                popup.dismiss()
-                subprocess.Popen(["/sbin/reboot"])
-
-            btn_ok.bind(on_press=do_reboot)
-            btn_cancel.bind(on_press=lambda b: popup.dismiss())
-            popup.open()
-
-        wimg.bind(on_touch_down=show_reboot_dialog)
-
-        ui.coolControl.bind(on_press=controller.control_callback)
-        ui.heatControl.bind(on_press=controller.control_callback)
-        ui.fanControl.bind(on_press=controller.control_callback)
-        ui.holdControl.bind(on_press=controller.control_callback)
-
-        ui.tempSlider.bind(on_touch_down=controller.update_set_temp, on_touch_move=controller.update_set_temp)
-
-
-        wimg.size = (80, 80)
-        wimg.size_hint = (None, None)
-        wimg.pos = (10, 380)
-
-        ui.heatControl.size = (80, 80)
-        ui.heatControl.pos = (680, 380)
-
-        ui.coolControl.size = (80, 80)
-        ui.coolControl.pos = (680, 270)
-
-        ui.fanControl.size = (80, 80)
-        ui.fanControl.pos = (680, 160)
-
-        ui.statusHeatLabel.pos = (635, 80)
-        ui.statusCoolLabel.pos = (635, 60)
-        ui.statusFanLabel.pos = (635, 40)
-        ui.statusSchedLabel.pos = (635, 20)
-        ui.statusHeatValueLabel.pos = (710, 80)
-        ui.statusCoolValueLabel.pos = (710, 60)
-        ui.statusFanValueLabel.pos = (710, 40)
-        ui.statusSchedValueLabel.pos = (710, 20)
-
-        ui.tempSlider.size = (100, 360)
-        ui.tempSlider.pos = (570, 20)
-
-        ui.holdControl.size = (80, 80)
-        ui.holdControl.pos = (480, 380)
-
-        ui.setLabel.pos = (590, 390)
-
-        ui.currentLabel.pos = (390, 300)
-        ui.currentWaterLabel.pos = (340, 235)
-        ui.currentWaterValueLabel.pos = (450, 235)
-
-        ui.dateLabel.pos = (180, 370)
-        ui.timeLabel.pos = (345, 380)
-
-        ui.weatherImg.pos = (265, 160)
-        ui.weatherSummaryLabel.pos = (430, 160)
-        ui.weatherTempLabel.pos = (365, 135)
-        ui.weatherTempValueLabel.pos = (450, 135)
-        ui.weatherHumidityLabel.pos = (365, 110)
-        ui.weatherHumidityValueLabel.pos = (450, 110)
-        ui.weatherWindLabel.pos = (365, 85)
-        ui.weatherWindValueLabel.pos = (450, 85)
-        ui.weatherCloudsLabel.pos = (365, 60)
-        ui.weatherCloudsValueLabel.pos = (450, 60)
-        ui.weatherSunLabel.pos = (365, 35)
-        ui.weatherSunValueLabel.pos = (450, 35)
-
-        ui.versionLabel.pos = (320, 0)
-
-        forecastTodayHeading = Label(text="[b]"+ _("Today") + "[/b]:", font_size='20sp', markup=True, size_hint=(None, None),
-                                     pos=(0, 300))
-
-        ui.forecastTodayImg.pos = (0, 275)
-        ui.forecastTodaySummaryLabel.pos = (100, 275)
-        ui.forecastTodayHighLabel.pos = (30, 248)
-        ui.forecastTodayHighValueLabel.pos = (150, 248)
-        ui.forecastTodayHumidityLabel.pos = (30, 231)
-        ui.forecastTodayHumidityValueLabel.pos = (150, 231)
-        ui.forecastTodayWindLabel.pos = (30, 214)
-        ui.forecastTodayWindValueLabel.pos = (150, 214)
-        ui.forecastTodayCloudsLabel.pos = (30, 197)
-        ui.forecastTodayCloudsValueLabel.pos = (150, 197)
-        ui.forecastTodayRainLabel.pos = (30, 180)
-        ui.forecastTodayRainValueLabel.pos = (150, 180)
-
-        forecastTomoHeading = Label(text="[b]" + _("Tomorrow") + "[/b]:", font_size='20sp', markup=True, size_hint=(None, None),
-                                    pos=(0, 130))
-        ui.forecastTomoImg.pos = (0, 100)
-        ui.forecastTomoSummaryLabel.pos = (100, 100)
-        ui.forecastTomoHighLabel.pos = (30, 73)
-        ui.forecastTomoHighValueLabel.pos = (150, 73)
-        ui.forecastTomoHumidityLabel.pos = (30, 57)
-        ui.forecastTomoHumidityValueLabel.pos = (150, 57)
-        ui.forecastTomoWindLabel.pos = (30, 41)
-        ui.forecastTomoWindValueLabel.pos = (150, 41)
-        ui.forecastTomoCloudsLabel.pos = (30, 25)
-        ui.forecastTomoCloudsValueLabel.pos = (150, 25)
-        ui.forecastTomoRainLabel.pos = (30, 9)
-        ui.forecastTomoRainValueLabel.pos = (150, 9)
-
-        thermostatUI.add_widget(wimg)
-        thermostatUI.add_widget(ui.coolControl)
-        thermostatUI.add_widget(ui.heatControl)
-        thermostatUI.add_widget(ui.fanControl)
-        thermostatUI.add_widget(ui.holdControl)
-        thermostatUI.add_widget(ui.tempSlider)
-        thermostatUI.add_widget(ui.currentLabel)
-        thermostatUI.add_widget(ui.currentWaterLabel)
-        thermostatUI.add_widget(ui.currentWaterValueLabel)
-        thermostatUI.add_widget(ui.setLabel)
-        thermostatUI.add_widget(ui.statusHeatLabel)
-        thermostatUI.add_widget(ui.statusCoolLabel)
-        thermostatUI.add_widget(ui.statusFanLabel)
-        thermostatUI.add_widget(ui.statusSchedLabel)
-        thermostatUI.add_widget(ui.statusHeatValueLabel)
-        thermostatUI.add_widget(ui.statusCoolValueLabel)
-        thermostatUI.add_widget(ui.statusFanValueLabel)
-        thermostatUI.add_widget(ui.statusSchedValueLabel)
-
-        thermostatUI.add_widget(ui.dateLabel)
-        thermostatUI.add_widget(ui.timeLabel)
-        thermostatUI.add_widget(ui.weatherImg)
-        thermostatUI.add_widget(ui.weatherSummaryLabel)
-        thermostatUI.add_widget(ui.weatherTempLabel)
-        thermostatUI.add_widget(ui.weatherTempValueLabel)
-        thermostatUI.add_widget(ui.weatherHumidityLabel)
-        thermostatUI.add_widget(ui.weatherHumidityValueLabel)
-        thermostatUI.add_widget(ui.weatherWindLabel)
-        thermostatUI.add_widget(ui.weatherWindValueLabel)
-        thermostatUI.add_widget(ui.weatherCloudsLabel)
-        thermostatUI.add_widget(ui.weatherCloudsValueLabel)
-        thermostatUI.add_widget(ui.weatherSunLabel)
-        thermostatUI.add_widget(ui.weatherSunValueLabel)
-
-        thermostatUI.add_widget(ui.versionLabel)
-        thermostatUI.add_widget(forecastTodayHeading)
-        thermostatUI.add_widget(ui.forecastTodayImg)
-        thermostatUI.add_widget(ui.forecastTodaySummaryLabel)
-        thermostatUI.add_widget(ui.forecastTodayHighLabel)
-        thermostatUI.add_widget(ui.forecastTodayHighValueLabel)
-        thermostatUI.add_widget(ui.forecastTodayHumidityLabel)
-        thermostatUI.add_widget(ui.forecastTodayHumidityValueLabel)
-        thermostatUI.add_widget(ui.forecastTodayWindLabel)
-        thermostatUI.add_widget(ui.forecastTodayWindValueLabel)
-        thermostatUI.add_widget(ui.forecastTodayCloudsLabel)
-        thermostatUI.add_widget(ui.forecastTodayCloudsValueLabel)
-        thermostatUI.add_widget(ui.forecastTodayRainLabel)
-        thermostatUI.add_widget(ui.forecastTodayRainValueLabel)
-
-        thermostatUI.add_widget(forecastTomoHeading)
-        thermostatUI.add_widget(ui.forecastTomoImg)
-        thermostatUI.add_widget(ui.forecastTomoSummaryLabel)
-        thermostatUI.add_widget(ui.forecastTomoHighLabel)
-        thermostatUI.add_widget(ui.forecastTomoHighValueLabel)
-        thermostatUI.add_widget(ui.forecastTomoHumidityLabel)
-        thermostatUI.add_widget(ui.forecastTomoHumidityValueLabel)
-        thermostatUI.add_widget(ui.forecastTomoWindLabel)
-        thermostatUI.add_widget(ui.forecastTomoWindValueLabel)
-        thermostatUI.add_widget(ui.forecastTomoCloudsLabel)
-        thermostatUI.add_widget(ui.forecastTomoCloudsValueLabel)
-        thermostatUI.add_widget(ui.forecastTomoRainLabel)
-        thermostatUI.add_widget(ui.forecastTomoRainValueLabel)
-
-        layout = thermostatUI
-
-
-        if minUIEnabled:
-            uiScreen = Screen(name="thermostatUI")
-            uiScreen.add_widget(thermostatUI)
-
-            minScreen = MinimalScreen(name="minimalUI")
-            minScreen.handlers = handlers
-            minUI = FloatLayout(size=(800, 480))
-
-            with minUI.canvas.before:
-                Color(0.0, 0.0, 0.0, 1)
-                self.rect = Rectangle(size=(800, 480), pos=minUI.pos)
-
-            ui.altCurLabel.pos = (390, 275)
-            ui.altTimeLabel.pos = (45, 398)
-            ui.altDecisionLabel.pos = (575, 398)
-            ui.altWaterLabel.pos = (55, 165)
-            ui.altWaterValueLabel.pos = (240, 163)
-            ui.altHeaterLabel.pos = (430, 165)
-            ui.altHeaterValueLabel.pos = (575, 163)
-
-            # battery line: per settings key "battery_line_pos": [x, y]
-            # (thermostat_settings.json) tweakable without git roundtrips.
-            battery_pos = list(cfg.value("battery_line_pos", [35, 225]))
-            ui.altBatteryLabel.pos = (battery_pos[0], battery_pos[1])
-            ui.altBatteryValueLabel.pos = (battery_pos[0] + 130, battery_pos[1] - 3)
-
-            global priceBarsWidget
-            priceBarsWidget = ui.PriceBarsWidget(size=(800, 140), size_hint=(None, None), pos=(0, 0))
-
-            minUI.add_widget(ui.altCurLabel)
-            minUI.add_widget(ui.altTimeLabel)
-            minUI.add_widget(ui.altWaterLabel)
-            minUI.add_widget(ui.altWaterValueLabel)
-            minUI.add_widget(ui.altHeaterLabel)
-            minUI.add_widget(ui.altHeaterValueLabel)
-            minUI.add_widget(ui.altBatteryLabel)
-            minUI.add_widget(ui.altBatteryValueLabel)
-            minUI.add_widget(ui.altDecisionLabel)
-            minUI.add_widget(priceBarsWidget)
-            minScreen.add_widget(minUI)
-
-            screenMgr = ScreenManager(
-                transition=NoTransition())  # FadeTransition seems to have OpenGL bugs in Kivy Dev 1.9.1 and is unstable, so sticking with no transition for now
-            screenMgr.add_widget(uiScreen)
-            screenMgr.add_widget(minScreen)
-
-            layout = screenMgr
-
-            handlers.schedule_minimal_ui()
-
-            if pirEnabled:
-                Clock.schedule_interval(handlers.check_pir, pirCheckInterval)
-
-        Clock.schedule_interval(controller.check_sensor_temp, tempCheckInterval)
-
-        if hotwater_control is not None and hotwater_control.enabled:
-            hotwater_control.set_ui_callback(handlers.update_hotwater_ui)
-            hotwater_control.start()
-
-        weather_view.start()
-
-        return layout
-
 
 ##############################################################################
 #                                                                            #
@@ -953,7 +621,7 @@ scheduler = Scheduler(
 def startWebServer():
     host = cfg.get("web", "host")
     # when host = "discover", use the local IP address
-    cherrypy.server.socket_host = host if host != "discover" else get_ip_address()
+    cherrypy.server.socket_host = host if host != "discover" else commands.get_ip_address()
     cherrypy.server.socket_port = cfg.get("web", "port")
 
     log(LOG_LEVEL_STATE, CHILD_DEVICE_WEBSERVER, MSG_SUBTYPE_TEXT,
@@ -1028,7 +696,18 @@ def main():
     schedThread.daemon = True
     schedThread.start()
 
-    ThermostatApp().run()
+    ThermostatApp(
+        ui=ui,
+        controller=controller,
+        handlers=handlers,
+        weather_view=weather_view,
+        hotwater=hotwater_control,
+        cfg=cfg,
+        min_ui_enabled=minUIEnabled,
+        pir_enabled=pirEnabled,
+        pir_check_interval=pirCheckInterval,
+        temp_check_interval=tempCheckInterval,
+    ).run()
 
 if __name__ == '__main__':
     try:
