@@ -46,6 +46,7 @@ import urllib.request
 import uuid
 
 from hysteresistimer import HysteresisTimer
+from faikin import FaikinController
 
 try:
     from hotwater_control import HotWaterControl
@@ -207,11 +208,6 @@ THERMOSTAT_VERSION = "2.3.1"
 
 debug = False
 useTestSchedule = False
-prevTemp = None
-prevTargetTemp = None
-prevFaikinMode = None
-prevFaikinPower = None
-last_faikin_control_time = 0.0
 FAIKIN_CONTROL_HEARTBEAT = 60  # s: Steuerbefehl regelmäßig wiederholen
 fan_hysteresis_timer = HysteresisTimer(interval=10)
 
@@ -245,7 +241,6 @@ hotwater_control = HotWaterControl(hotwater_settings) if hotwater_module_availab
 # Faikin (Daikin AC) setup:
 faikinEnabled = 0 if not (settings.exists("faikin")) else settings.get("faikin")["enabled"]
 faikinName = 'GuestAC' if not (settings.exists("faikin")) else settings.get("faikin")["name"]
-outside_temp = 0.0
 # MQTT settings/setup
 
 def on_disconnect(client, userdata, disconnect_flags, reason_code, properties):
@@ -673,183 +668,24 @@ screenMgr = None
 #                                                                            #
 ##############################################################################
 
-def get_faikin_status(message):
-    global outside_temp
-    try:
-        payload = message.payload
-        if isinstance(payload, bytes):
-            payload = payload.decode('utf-8')
-        data = json.loads(payload)
-
-        # "outside" kann fehlen, None, einzelner Wert oder Liste sein
-        val = data.get('outside')
-        if val is None:
-            return
-        if isinstance(val, list):
-            numeric = [v for v in val if isinstance(v, (int, float))]
-            if not numeric:
-                return
-            val = sum(numeric) / len(numeric)
-        if isinstance(val, (int, float)):
-            outside_temp = float(val)
-
-    except (json.JSONDecodeError, UnicodeDecodeError, ValueError, TypeError) as e:
-        log(LOG_LEVEL_ERROR, CHILD_DEVICE_FAIKIN,
-            MSG_SUBTYPE_FAIKIN + "/" + faikinName,
-            f"Bad faikin payload: {e}")
-
-def get_state_json():
-    global outside_temp
-
-    autop = True
-    summer_temp = 14 if not (settings.exists("faikin")) else settings.get("faikin")["summer_temp"]
-
-    # Defensive: outside_temp könnte aus altem Code als Liste vorliegen
-    if isinstance(outside_temp, list):
-        numeric = [v for v in outside_temp if isinstance(v, (int, float))]
-        outside_temp = sum(numeric) / len(numeric) if numeric else 0.0
-    if not isinstance(outside_temp, (int, float)):
-        outside_temp = 0.0
-
-    if summer_temp < outside_temp:
-        heat_state = False
-        autop = False
-    else:
-        heat_state = heatControl.state == "down"
-
-    if heatControl.state == "down":
-        mode = "H"
-    elif coolControl.state == "down":
-        mode = "C"
-        if not heat_state:
-            autop = True
-    else:
-        mode = "A"
-        autop = False
-
-    targettemp = tempSlider.value
-    roundedtemp = round(currentTemp * 2) / 2
-    targetdiff = targettemp - roundedtemp
-
-    data = {
-        "env": currentTemp,
-        "rounded": roundedtemp,
-        "diff": targetdiff,
-        "heat": heat_state,
-        "mode": mode,
-        "autop": autop,
-        "autot": targettemp
+def _get_faikin_snapshot():
+    """Aktueller Thermostat-Zustand für den FaikinController."""
+    return {
+        "currentTemp": currentTemp,
+        "heat": heatControl.state == "down",
+        "cool": coolControl.state == "down",
+        "target": tempSlider.value,
     }
-    return data
 
-def publish_faikin_mqtt_message():
-    global prevTemp, prevTargetTemp, prevFaikinMode, prevFaikinPower
-    global last_faikin_control_time
 
-    # Snapshot des aktuellen Wertes — schützt gegen Änderung während der Funktion
-    cur_temp = currentTemp
+def _faikin_log_debug(msg):
+    log(LOG_LEVEL_DEBUG, CHILD_DEVICE_FAIKIN,
+        MSG_SUBTYPE_FAIKIN + "/" + faikinName, msg)
 
-    try:
-        state_data = get_state_json()
-        payload = json.dumps(state_data)
-        mqttc.publish(mqttPub_state, payload)
 
-        if not faikinEnabled:
-            return
-
-        targettemp = state_data["autot"]
-        mode = state_data["mode"]
-        power = state_data["autop"]
-        rounded_temp = state_data["rounded"]
-
-        tolerance = 0.2       # Erlaubte Temperaturschwankung
-        fan_hysteresis = 0.5  # Verhindert zu schnelle Lüfteränderungen
-
-        # Ohne gültige aktuelle Temperatur kann keine Regelung stattfinden
-        if cur_temp is None:
-            return
-        if prevTemp is None:
-            prevTemp = cur_temp
-
-        delta_temp = cur_temp - prevTemp
-
-        # Regelung bei zu großer Abweichung
-        if (mode == "H" and tempSlider.value + 4.0 < rounded_temp) or \
-           (mode == "C" and tempSlider.value - 4.0 > rounded_temp):
-            power = False
-
-        powerful = False
-        fan = "3"      # Automatischer Modus als Standard
-        demand = 70
-
-        if mode == "H":  # Heizmodus
-            temp_diff = cur_temp - targettemp
-            if abs(temp_diff) <= tolerance:
-                fan, demand = "3", 70
-            elif temp_diff > fan_hysteresis:
-                fan = "1" if abs(temp_diff) > 3 else "2"
-                demand = 30 if abs(temp_diff) > 3 else 50
-            elif temp_diff < -fan_hysteresis:
-                fan = "5" if abs(temp_diff) > 2 else "4"
-                demand = 100 if abs(temp_diff) > 2 else 95
-
-        elif mode == "C":  # Kühlmodus
-            temp_diff = targettemp - cur_temp
-            if abs(temp_diff) <= tolerance:
-                fan, demand = "3", 70
-            elif temp_diff > fan_hysteresis:
-                fan = "4" if abs(temp_diff) > 2 else "5"
-                demand = 95 if abs(temp_diff) > 2 else 100
-            elif temp_diff < -fan_hysteresis:
-                fan = "1" if abs(temp_diff) > 2 else "2"
-                demand = 30 if abs(temp_diff) > 2 else 50
-
-        # Steuerbefehl nur bei relevanter Änderung oder als Heartbeat senden.
-        # WICHTIG: Auf das control-Topic gehört ein gültiger Steuerbefehl mit
-        # "power"/"temp"/"mode"/"fan"/"demand". Vorher wurde hier bei stabiler
-        # Temperatur die State-JSON gesendet — die Faikout-Firmware ignoriert
-        # sie (kein "power"), wodurch die Daikin nie einschaltete.
-        now = time.time()
-        control_changed = (
-            prevTargetTemp is None
-            or prevTargetTemp != targettemp
-            or prevFaikinMode != mode
-            or prevFaikinPower != power
-        )
-
-        if control_changed or abs(delta_temp) >= tolerance \
-                or (now - last_faikin_control_time) >= FAIKIN_CONTROL_HEARTBEAT:
-            data = {
-                "env": cur_temp,
-                "temp": targettemp,
-                "powerful": powerful,
-                "power": power,
-                "mode": mode,
-                "fan": fan,
-                "demand": demand,
-            }
-            mqtt_topic = f"command/{faikinName}/control"
-            mqttc.publish(mqtt_topic, json.dumps(data))
-            last_faikin_control_time = now
-
-            log(LOG_LEVEL_DEBUG, CHILD_DEVICE_FAIKIN,
-                MSG_SUBTYPE_FAIKIN + "/" + faikinName,
-                "control " + json.dumps(data))
-
-        prevTargetTemp = targettemp
-        prevFaikinMode = mode
-        prevFaikinPower = power
-
-    except Exception as e:
-        error_trace = traceback.format_exc()
-        log(LOG_LEVEL_ERROR, CHILD_DEVICE_FAIKIN,
-            MSG_SUBTYPE_FAIKIN + "/" + faikinName,
-            f"{e}\n{error_trace}", timestamp=False)
-    finally:
-        # prevTemp IMMER aktualisieren, auch bei early-return oder Exception
-        if cur_temp is not None:
-            prevTemp = cur_temp
-
+def _faikin_log_error(msg):
+    log(LOG_LEVEL_ERROR, CHILD_DEVICE_FAIKIN,
+        MSG_SUBTYPE_FAIKIN + "/" + faikinName, msg)
 
 ##############################################################################
 #                                                                            #
@@ -1120,7 +956,7 @@ def change_system_settings():
             log(LOG_LEVEL_STATE, CHILD_DEVICE_FAN, MSG_SUBTYPE_BINARY_STATUS, "1" if GPIO.input(fanPin) else "0")
 
         if mqttEnabled:
-            publish_faikin_mqtt_message()
+            faikin.publish_control()
 
 # This callback will be bound to the touch screen UI buttons:
 
@@ -1533,8 +1369,24 @@ if mqttEnabled:
     if domestic_water_enabled:
         mqttc.message_callback_add(domestic_water_topic, lambda client, userdata, message: set_domestic_water(message))
 
+    # FaikinController kennt nur die von aussen hereingereichten Abhaengigkeiten
+    faikin = FaikinController(
+        name=faikinName,
+        enabled=faikinEnabled,
+        summer_temp=(14 if not (settings.exists("faikin"))
+                     else settings.get("faikin")["summer_temp"]),
+        publish=mqttc.publish,
+        get_snapshot=_get_faikin_snapshot,
+        state_topic=mqttPub_state,
+        heartbeat=FAIKIN_CONTROL_HEARTBEAT,
+        log_debug=_faikin_log_debug,
+        log_error=_faikin_log_error,
+    )
+
     if faikinEnabled:
-        mqttc.message_callback_add(mqttSub_faikin, lambda client, userdata, message: get_faikin_status(message))
+        mqttc.message_callback_add(
+            mqttSub_faikin,
+            lambda client, userdata, message: faikin.handle_status_message(message))
 
     # Make sure we can reach the mqtt server by pinging it (max 30s wait)
     pingCount = 0
