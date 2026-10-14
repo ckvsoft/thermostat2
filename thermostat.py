@@ -48,6 +48,7 @@ import uuid
 from faikin import FaikinController
 from config import Config
 from weather import build_urls, get_weather, get_cardinal_direction, get_precip_amount
+from app_state import AppState
 
 try:
     from hotwater_control import HotWaterControl
@@ -391,13 +392,19 @@ windUnits = " km/h" if tempScale == "metric" else " mph"
 
 TEMP_TOLERANCE = 0.1 if tempScale == "metric" else 0.18
 
-currentTemp = 22.0 if tempScale == "metric" else 72.0
-domesticwater = "n/a"
 minFlowTemp = 65.0
 currentFlowTemp = 0.0
 
 priorCorrected = -100.0
-setTemp = 22.0 if not (state.exists("state")) else state.get("state")["setTemp"]
+_saved = state.get("state") if state.exists("state") else {}
+app = AppState(
+    current_temp=22.0 if tempScale == "metric" else 72.0,
+    set_temp=_saved.get("setTemp", 22.0),
+    heat=_saved.get("heatControl") == "down",
+    cool=_saved.get("coolControl") == "down",
+    fan=_saved.get("fanControl") == "down",
+    hold=_saved.get("holdControl") == "down",
+)
 _last_persisted_state = None  # cache to avoid needless writes (spares the SD card)
 
 tempHysteresis = cfg.get("thermostat", "tempHysteresis")
@@ -423,9 +430,9 @@ log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/temperatu
     timestamp=False)
 log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/temperature/windUnits", str(windUnits),
     timestamp=False)
-log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/temperature/currentTemp", str(currentTemp),
+log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/temperature/currentTemp", str(app.current_temp),
     timestamp=False)
-log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/temperature/setTemp", str(setTemp),
+log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/temperature/app.set_temp", str(app.set_temp),
     timestamp=False)
 log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/temperature/tempHysteresis", str(tempHysteresis),
     timestamp=False)
@@ -552,40 +559,40 @@ coolControl = ToggleButton(text="[b]" + _("Cool") + "[/b]",
                            size_hint=(None, None)
                            )
 
-setControlState(coolControl, "normal" if not (state.exists("state")) else state.get("state")["coolControl"])
+setControlState(coolControl, "down" if app.cool else "normal")
 
 heatControl = ToggleButton(text="[b]" + _("Heat") + "[/b]",
                            markup=True,
                            size_hint=(None, None)
                            )
 
-setControlState(heatControl, "normal" if not (state.exists("state")) else state.get("state")["heatControl"])
+setControlState(heatControl, "down" if app.heat else "normal")
 
 fanControl = ToggleButton(text="[b]" + _("Fan") + "[/b]",
                           markup=True,
                           size_hint=(None, None)
                           )
 
-setControlState(fanControl, "normal" if not (state.exists("state")) else state.get("state")["fanControl"])
+setControlState(fanControl, "down" if app.fan else "normal")
 
 holdControl = ToggleButton(text="[b]" + _("Hold") + "[/b]",
                            markup=True,
                            size_hint=(None, None)
                            )
 
-setControlState(holdControl, "normal" if not (state.exists("state")) else state.get("state")["holdControl"])
+setControlState(holdControl, "down" if app.hold else "normal")
 
 def get_status_info():
     with thermostatLock:
         sched = "None"
 
-        if holdControl.state == "down":
+        if app.hold:
             sched = _("Hold")
         elif useTestSchedule:
             sched = "Test"
-        elif heatControl.state == "down":
+        elif app.heat:
             sched = _("Heat")
-        elif coolControl.state == "down":
+        elif app.cool:
             sched = _("Cool")
 
         status_info = {
@@ -600,15 +607,15 @@ def get_status_info():
         return status_info_json
 
 versionLabel = Label(text="Thermostat v" + str(THERMOSTAT_VERSION), size_hint=(None, None), font_size='10sp', markup=True, text_size=(150, 20))
-currentLabel = Label(text="[b]" + str(currentTemp) + scaleUnits + "[/b]", size_hint=(None, None), font_size='100sp', markup=True, text_size=(300, 200))
+currentLabel = Label(text="[b]" + str(app.current_temp) + scaleUnits + "[/b]", size_hint=(None, None), font_size='100sp', markup=True, text_size=(300, 200))
 currentWaterLabel = Label(text="[b]" + _("Domestic water") + "[/b]:", size_hint=(None, None), font_size='25sp', markup=True, text_size=(200, 100))
-currentWaterValueLabel = Label(text=str(domesticwater) + scaleUnits, size_hint=(None, None), font_size='25sp', markup=True, text_size=(100, 100))
+currentWaterValueLabel = Label(text=str(app.domestic_water) + scaleUnits, size_hint=(None, None), font_size='25sp', markup=True, text_size=(100, 100))
 
 altCurLabel = Label(text=currentLabel.text, size_hint=(None, None), font_size='80sp', markup=True, text_size=(300, 120), color=(0.5, 0.5, 0.5, 0.35))
 altWaterLabel = Label(text=currentWaterLabel.text, size_hint=(None, None), font_size='26sp', markup=True, text_size=(190, 42), color=(0.45, 0.45, 0.45, 0.6))
 altWaterValueLabel = Label(text=currentWaterValueLabel.text, size_hint=(None, None), font_size='36sp', markup=True, text_size=(190, 55), color=(0.6, 0.6, 0.6, 0.55))
 
-setLabel = Label(text="  Set\n[b]" + str(setTemp) + scaleUnits + "[/b]", size_hint=(None, None), font_size='25sp', markup=True, text_size=(100, 100))
+setLabel = Label(text="  Set\n[b]" + str(app.set_temp) + scaleUnits + "[/b]", size_hint=(None, None), font_size='25sp', markup=True, text_size=(100, 100))
 
 status_info = json.loads(get_status_info())
 
@@ -641,7 +648,7 @@ altHourLabels = []
 priceBarsWidget = None
 PRICE_BAR_HOURS = 24
 
-tempSlider = Slider(orientation='vertical', min=minTemp, max=maxTemp, step=tempStep, value=setTemp, size_hint=(None, None))
+tempSlider = Slider(orientation='vertical', min=minTemp, max=maxTemp, step=tempStep, value=app.set_temp, size_hint=(None, None))
 
 screenMgr = None
 
@@ -654,12 +661,7 @@ screenMgr = None
 
 def _get_faikin_snapshot():
     """Current thermostat snapshot for the FaikinController."""
-    return {
-        "currentTemp": currentTemp,
-        "heat": heatControl.state == "down",
-        "cool": coolControl.state == "down",
-        "target": tempSlider.value,
-    }
+    return app.snapshot()
 
 
 def _faikin_log_debug(msg):
@@ -856,36 +858,36 @@ def change_system_settings():
         cpin_start = str(GPIO.input(coolPin))
         fpin_start = str(GPIO.input(fanPin))
 
-        if heatControl.state == "down":
+        if app.heat:
             GPIO.output(coolPin, GPIO.HIGH)
 
-            if setTemp >= currentTemp + tempHysteresis:
+            if app.set_temp >= app.current_temp + tempHysteresis:
                 GPIO.output(heatPin, GPIO.LOW)
                 GPIO.output(fanPin, GPIO.LOW)
-            elif setTemp <= currentTemp:
+            elif app.set_temp <= app.current_temp:
                 GPIO.output(heatPin, GPIO.HIGH)
-                if fanControl.state != "down" and GPIO.input(coolPin):
+                if not app.fan and GPIO.input(coolPin):
                     GPIO.output(fanPin, GPIO.HIGH)
         else:
             GPIO.output(heatPin, GPIO.HIGH)
 
-            if coolControl.state == "down":
-                if setTemp <= currentTemp - tempHysteresis:
+            if app.cool:
+                if app.set_temp <= app.current_temp - tempHysteresis:
                     GPIO.output(coolPin, GPIO.LOW)
                     GPIO.output(fanPin, GPIO.LOW)
-                elif setTemp >= currentTemp:
+                elif app.set_temp >= app.current_temp:
                     GPIO.output(coolPin, GPIO.HIGH)
-                    if fanControl.state != "down" and GPIO.input(heatPin):
+                    if not app.fan and GPIO.input(heatPin):
                         GPIO.output(fanPin, GPIO.LOW)
             else:
                 GPIO.output(coolPin, GPIO.HIGH)
-                if fanControl.state != "down" and GPIO.input(heatPin):
+                if not app.fan and GPIO.input(heatPin):
                     GPIO.output(fanPin, GPIO.HIGH)
 
         log(LOG_LEVEL_STATE, CHILD_DEVICE_TEMP, MSG_SUBTYPE_TEMPERATURE, "minFlow: " + str(minFlowTemp))
         log(LOG_LEVEL_STATE, CHILD_DEVICE_TEMP, MSG_SUBTYPE_TEMPERATURE, "currentFlow: " + str(currentFlowTemp))
 
-        if fanControl.state == "down":
+        if app.fan:
             GPIO.output(fanPin, GPIO.HIGH)
             setMqttFanCommand("on")
             log(LOG_LEVEL_STATE, CHILD_DEVICE_FAN, MSG_SUBTYPE_TEXT, "fan forced on")
@@ -897,12 +899,13 @@ def change_system_settings():
 
         # persist state across restarts, only when changed (spares the SD card)
         global _last_persisted_state
-        current_state = (setTemp, heatControl.state, coolControl.state,
-                         fanControl.state, holdControl.state)
+        current_state = (app.set_temp, app.heat, app.cool, app.fan, app.hold)
         if current_state != _last_persisted_state:
-            state.put("state", setTemp=setTemp, heatControl=heatControl.state,
-                      coolControl=coolControl.state, fanControl=fanControl.state,
-                      holdControl=holdControl.state)
+            state.put("state", setTemp=app.set_temp,
+                      heatControl="down" if app.heat else "normal",
+                      coolControl="down" if app.cool else "normal",
+                      fanControl="down" if app.fan else "normal",
+                      holdControl="down" if app.hold else "normal")
             _last_persisted_state = current_state
 
         status_info = json.loads(get_status_info())
@@ -929,35 +932,45 @@ def control_callback(control):
         if control is coolControl:
             if control.state == "down":
                 setControlState(heatControl, "normal")
+                app.heat = False
+            app.cool = control.state == "down"
             reloadSchedule()
 
         if control is heatControl:
             if control.state == "down":
                 setControlState(coolControl, "normal")
+                app.cool = False
+            app.heat = control.state == "down"
             reloadSchedule()
+
+        if control is fanControl:
+            app.fan = control.state == "down"
+
+        if control is holdControl:
+            app.hold = control.state == "down"
 
 
 
 def check_sensor_temp(dt):
     with thermostatLock:
-        global currentTemp, priorCorrected
+        global priorCorrected
         global tempSensor
 
         if tempSensor is not None:
             try:
                 rawTemp = tempSensor.get_temperature(sensorUnits)
                 correctedTemp = (((rawTemp - freezingMeasured) * referenceRange) / measuredRange) + freezingPoint
-                currentTemp = round(correctedTemp, 1)
+                app.current_temp = round(correctedTemp, 1)
                 log(LOG_LEVEL_DEBUG, CHILD_DEVICE_TEMP, MSG_SUBTYPE_CUSTOM + "/raw", str(rawTemp))
                 log(LOG_LEVEL_DEBUG, CHILD_DEVICE_TEMP, MSG_SUBTYPE_CUSTOM + "/corrected", str(correctedTemp))
 
                 if abs(priorCorrected - correctedTemp) >= TEMP_TOLERANCE:
-                    log(LOG_LEVEL_STATE, CHILD_DEVICE_TEMP, MSG_SUBTYPE_TEMPERATURE, str(currentTemp))
+                    log(LOG_LEVEL_STATE, CHILD_DEVICE_TEMP, MSG_SUBTYPE_TEMPERATURE, str(app.current_temp))
                     priorCorrected = correctedTemp
             except Exception as e:
                 log(LOG_LEVEL_ERROR, CHILD_DEVICE_TEMP, MSG_SUBTYPE_TEXT, f"Sensor read failed: {e}")
 
-        currentLabel.text = "[b]" + str(currentTemp) + scaleUnits + "[/b]"
+        currentLabel.text = "[b]" + str(app.current_temp) + scaleUnits + "[/b]"
         altCurLabel.text = currentLabel.text
 
         dateLabel.text = "[b]" + time.strftime("%a %d. %b %Y") + "[/b]"
@@ -971,19 +984,18 @@ def check_sensor_temp(dt):
 
         if hotwater_control is not None and hotwater_control.enabled:
             try:
-                hotwater_control.update_water_temp(domesticwater)
+                hotwater_control.update_water_temp(app.domestic_water)
             except Exception as e:
                 log(LOG_LEVEL_ERROR, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT,
                     f"hotwater control error: {e}")
 
 def update_set_temp(slider, value):
     with thermostatLock:
-        global setTemp
-        priorTemp = setTemp
-        setTemp = round(slider.value, 1)
-        setLabel.text = "  Set\n[b]" + str(setTemp) + scaleUnits + "[/b]"
-        if priorTemp != setTemp:
-            log(LOG_LEVEL_STATE, CHILD_DEVICE_UICONTROL_SLIDER, MSG_SUBTYPE_TEMPERATURE, str(setTemp))
+        priorTemp = app.set_temp
+        app.set_temp = round(slider.value, 1)
+        setLabel.text = "  Set\n[b]" + str(app.set_temp) + scaleUnits + "[/b]"
+        if priorTemp != app.set_temp:
+            log(LOG_LEVEL_STATE, CHILD_DEVICE_UICONTROL_SLIDER, MSG_SUBTYPE_TEMPERATURE, str(app.set_temp))
 
 
 def check_pir(pin):
@@ -1233,7 +1245,7 @@ def setLogLevel(msg):
             "Invalid LogLevel: " + payload)
 
 def set_domestic_water(message):
-    global domestic_key_value_pair, domesticwater
+    global domestic_key_value_pair
     global currentWaterValueLabel, altWaterValueLabel, domestic_last_message_time
     try:
         payload = message.payload
@@ -1242,10 +1254,10 @@ def set_domestic_water(message):
 
         data = json.loads(payload)
         domestic_water_value = data.get(domestic_key_value_pair)
-        if domestic_water_value is not None and domesticwater != domestic_water_value:
-            domesticwater = domestic_water_value
-            currentWaterValueLabel.text = "[b]" + str(domesticwater) + scaleUnits + "[/b]"
-            altWaterValueLabel.text = "[b]" + str(domesticwater) + scaleUnits + "[/b]"
+        if domestic_water_value is not None and app.domestic_water != domestic_water_value:
+            app.domestic_water = domestic_water_value
+            currentWaterValueLabel.text = "[b]" + str(app.domestic_water) + scaleUnits + "[/b]"
+            altWaterValueLabel.text = "[b]" + str(app.domestic_water) + scaleUnits + "[/b]"
             altWaterValueLabel.color = (0.6, 0.6, 0.6, 0.55)
 
         domestic_last_message_time = time.time()
@@ -1259,14 +1271,14 @@ def set_domestic_water(message):
             f"set_domestic_water error: {e}")
 
 def check_domestic_water_timeout(dt):
-    global domestic_last_message_time, domesticwater
+    global domestic_last_message_time
     global currentWaterValueLabel, altWaterValueLabel
 
     current_time = time.time()
     if current_time - domestic_last_message_time > domestic_timeout_duration:
-        domesticwater = "n/a"
-        currentWaterValueLabel.text = "[b]" + str(domesticwater) + "[/b]"
-        altWaterValueLabel.text = "[b]" + str(domesticwater) + "[/b]"
+        app.domestic_water = "n/a"
+        currentWaterValueLabel.text = "[b]" + str(app.domestic_water) + "[/b]"
+        altWaterValueLabel.text = "[b]" + str(app.domestic_water) + "[/b]"
         altWaterValueLabel.color = (0.6, 0.6, 0.6, 0.55)
 
 def update_hotwater_ui(status):
@@ -1634,7 +1646,7 @@ def startScheduler():
     log(LOG_LEVEL_INFO, CHILD_DEVICE_SCHEDULER, MSG_SUBTYPE_TEXT, "Started")
     while True:
         try:
-            if holdControl.state == "normal":
+            if not app.hold:
                 with scheduleLock:
                     log(LOG_LEVEL_DEBUG, CHILD_DEVICE_SCHEDULER, MSG_SUBTYPE_TEXT, "Running pending")
                     schedule.run_pending()
@@ -1646,12 +1658,11 @@ def startScheduler():
 
 def setScheduledTemp(temp):
     with thermostatLock:
-        global setTemp
-        if holdControl.state == "normal":
-            setTemp = round(temp, 1)
-            setLabel.text = "  Set\n[b]" + str(setTemp) + scaleUnits + "[/b]"
-            tempSlider.value = setTemp
-            log(LOG_LEVEL_STATE, CHILD_DEVICE_SCHEDULER, MSG_SUBTYPE_TEMPERATURE, str(setTemp))
+        if not app.hold:
+            app.set_temp = round(temp, 1)
+            setLabel.text = "  Set\n[b]" + str(app.set_temp) + scaleUnits + "[/b]"
+            tempSlider.value = app.set_temp
+            log(LOG_LEVEL_STATE, CHILD_DEVICE_SCHEDULER, MSG_SUBTYPE_TEMPERATURE, str(app.set_temp))
 
 
 def getTestSchedule():
@@ -1683,11 +1694,11 @@ def reloadSchedule():
         with thermostatLock:
             thermoSched = JsonStore("thermostat_schedule.json")
 
-            if holdControl.state != "down":
-                if heatControl.state == "down":
+            if not app.hold:
+                if app.heat:
                     activeSched = thermoSched["heat"]
                     log(LOG_LEVEL_INFO, CHILD_DEVICE_SCHEDULER, MSG_SUBTYPE_CUSTOM + "/load", "heat")
-                elif coolControl.state == "down":
+                elif app.cool:
                     activeSched = thermoSched["cool"]
                     log(LOG_LEVEL_INFO, CHILD_DEVICE_SCHEDULER, MSG_SUBTYPE_CUSTOM + "/load", "cool")
 
@@ -1744,11 +1755,11 @@ class WebInterface(object):
 
             replacements = {
                 "@@version@@": str(THERMOSTAT_VERSION),
-                "@@temp@@": str(setTemp),
+                "@@temp@@": str(app.set_temp),
                 "@@temperaturlabel@@": str(_("Temperature")),
-                "@@current@@": str(currentTemp) + scaleUnits,
+                "@@current@@": str(app.current_temp) + scaleUnits,
                 "@@domesticwaterlabel@@": self._kivy_to_html(currentWaterLabel.text),
-                "@@domesticwater@@": str(domesticwater) + scaleUnits,
+                "@@domesticwater@@": str(app.domestic_water) + scaleUnits,
                 "@@minTemp@@": str(minTemp),
                 "@@maxTemp@@": str(maxTemp),
                 "@@tempStep@@": str(tempStep),
@@ -1764,10 +1775,10 @@ class WebInterface(object):
                 "@@fan@@": self._kivy_to_html(str(status_info['fan'])),
                 "@@sched@@": self._kivy_to_html(str(status_info['sched'])),
                 "@@dt@@": dt_str,
-                "@@heatChecked@@": "checked" if heatControl.state == "down" else "",
-                "@@coolChecked@@": "checked" if coolControl.state == "down" else "",
-                "@@fanChecked@@": "checked" if fanControl.state == "down" else "",
-                "@@holdChecked@@": "checked" if holdControl.state == "down" else "",
+                "@@heatChecked@@": "checked" if app.heat else "",
+                "@@coolChecked@@": "checked" if app.cool else "",
+                "@@fanChecked@@": "checked" if app.fan else "",
+                "@@holdChecked@@": "checked" if app.hold else "",
             }
             for key, val in replacements.items():
                 html = html.replace(key, val)
@@ -1776,7 +1787,6 @@ class WebInterface(object):
 
     @cherrypy.expose
     def set(self, temp, heat="off", cool="off", fan="off", hold="off"):
-        global setTemp
 
         log(LOG_LEVEL_INFO, CHILD_DEVICE_WEBSERVER, MSG_SUBTYPE_TEXT,
             "Set thermostat received from: " + cherrypy.request.remote.ip)
@@ -1790,20 +1800,25 @@ class WebInterface(object):
             raise cherrypy.HTTPError(400,
                 f"Temperature out of range ({minTemp}–{maxTemp})")
 
-        tempChanged = setTemp != new_temp
+        tempChanged = app.set_temp != new_temp
 
         with thermostatLock:
-            setTemp = new_temp
-            setLabel.text = "  Set\n[b]" + str(setTemp) + scaleUnits + "[/b]"
-            tempSlider.value = setTemp
+            app.set_temp = new_temp
+            setLabel.text = "  Set\n[b]" + str(app.set_temp) + scaleUnits + "[/b]"
+            tempSlider.value = app.set_temp
 
             if tempChanged:
-                log(LOG_LEVEL_STATE, CHILD_DEVICE_WEBSERVER, MSG_SUBTYPE_TEMPERATURE, str(setTemp))
+                log(LOG_LEVEL_STATE, CHILD_DEVICE_WEBSERVER, MSG_SUBTYPE_TEMPERATURE, str(app.set_temp))
 
             setControlState(heatControl, "down" if heat == "on" else "normal")
             setControlState(coolControl, "down" if cool == "on" else "normal")
             setControlState(fanControl,  "down" if fan  == "on" else "normal")
             setControlState(holdControl, "down" if hold == "on" else "normal")
+
+            app.heat = heat == "on"
+            app.cool = cool == "on"
+            app.fan = fan == "on"
+            app.hold = hold == "on"
 
             reloadSchedule()
 
@@ -1818,7 +1833,7 @@ class WebInterface(object):
             replacements = {
                 "@@version@@": str(THERMOSTAT_VERSION),
                 "@@dt@@": dt_str,
-                "@@temp@@": highlight(setTemp, tempChanged),
+                "@@temp@@": highlight(app.set_temp, tempChanged),
                 "@@heat@@": highlight(heat, heat == "on"),
                 "@@cool@@": highlight(cool, cool == "on"),
                 "@@fan@@":  highlight(fan,  fan  == "on"),
