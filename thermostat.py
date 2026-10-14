@@ -49,6 +49,7 @@ from faikin import FaikinController
 from config import Config
 from weather import build_urls, get_weather, get_cardinal_direction, get_precip_amount
 from app_state import AppState
+from web import WebInterface
 
 try:
     from hotwater_control import HotWaterControl
@@ -1721,172 +1722,29 @@ def reloadSchedule():
 #                                                                            #
 ##############################################################################
 
-class WebInterface(object):
-    # load HTML templates once at startup instead of every request
-    _template_cache = {}
+def apply_set_temp(new_temp):
+    app.set_temp = new_temp
+    setLabel.text = "  Set\n[b]" + str(app.set_temp) + scaleUnits + "[/b]"
+    tempSlider.value = app.set_temp
 
-    @classmethod
-    def _load_template(cls, path):
-        if path not in cls._template_cache:
-            with open(path, "r") as f:
-                cls._template_cache[path] = f.read()
-        return cls._template_cache[path]
 
-    @staticmethod
-    def _kivy_to_html(text):
-        """Convert Kivy markup tags to HTML."""
-        return (text.replace("[b]", "<b>")
-                    .replace("[/b]", "</b>")
-                    .replace("\n", "<br>")
-                    .replace(" ", "&nbsp;")
-                    .replace("[color=00ff00]", '<font color="green">')
-                    .replace("[/color]", '</font>'))
+def apply_controls(heat, cool, fan, hold):
+    setControlState(heatControl, "down" if heat else "normal")
+    setControlState(coolControl, "down" if cool else "normal")
+    setControlState(fanControl, "down" if fan else "normal")
+    setControlState(holdControl, "down" if hold else "normal")
+    app.heat = bool(heat)
+    app.cool = bool(cool)
+    app.fan = bool(fan)
+    app.hold = bool(hold)
 
-    @cherrypy.expose
-    def index(self):
-        log(LOG_LEVEL_INFO, CHILD_DEVICE_WEBSERVER, MSG_SUBTYPE_TEXT,
-            "Served thermostat.html to: " + cherrypy.request.remote.ip)
-        html = self._load_template("web/html/thermostat.html")
 
-        with thermostatLock:
-            status_info = json.loads(get_status_info())
-            dt_str = (self._kivy_to_html(dateLabel.text) + ", " +
-                      self._kivy_to_html(timeLabel.text))
+def _web_log_info(subtype, msg):
+    log(LOG_LEVEL_INFO, CHILD_DEVICE_WEBSERVER, subtype, msg)
 
-            replacements = {
-                "@@version@@": str(THERMOSTAT_VERSION),
-                "@@temp@@": str(app.set_temp),
-                "@@temperaturlabel@@": str(_("Temperature")),
-                "@@current@@": str(app.current_temp) + scaleUnits,
-                "@@domesticwaterlabel@@": self._kivy_to_html(currentWaterLabel.text),
-                "@@domesticwater@@": str(app.domestic_water) + scaleUnits,
-                "@@minTemp@@": str(minTemp),
-                "@@maxTemp@@": str(maxTemp),
-                "@@tempStep@@": str(tempStep),
-                "@@heatlabel@@": _("Heat"),
-                "@@coollabel@@": _("Cool"),
-                "@@fanlabel@@": _("Fan"),
-                "@@schedlabel@@": _("Sched"),
-                "@@holdlabel@@": _("Hold"),
-                "@@applysettings@@": _("Apply settings"),
-                "@@editschedule@@": _("Edit schedule"),
-                "@@heat@@": self._kivy_to_html(str(status_info['heat'])),
-                "@@cool@@": self._kivy_to_html(str(status_info['cool'])),
-                "@@fan@@": self._kivy_to_html(str(status_info['fan'])),
-                "@@sched@@": self._kivy_to_html(str(status_info['sched'])),
-                "@@dt@@": dt_str,
-                "@@heatChecked@@": "checked" if app.heat else "",
-                "@@coolChecked@@": "checked" if app.cool else "",
-                "@@fanChecked@@": "checked" if app.fan else "",
-                "@@holdChecked@@": "checked" if app.hold else "",
-            }
-            for key, val in replacements.items():
-                html = html.replace(key, val)
 
-        return html
-
-    @cherrypy.expose
-    def set(self, temp, heat="off", cool="off", fan="off", hold="off"):
-
-        log(LOG_LEVEL_INFO, CHILD_DEVICE_WEBSERVER, MSG_SUBTYPE_TEXT,
-            "Set thermostat received from: " + cherrypy.request.remote.ip)
-
-        # input validation, avoids a ValueError crash on bad input
-        try:
-            new_temp = float(temp)
-        except (TypeError, ValueError):
-            raise cherrypy.HTTPError(400, "Invalid temperature value")
-        if not (minTemp <= new_temp <= maxTemp):
-            raise cherrypy.HTTPError(400,
-                f"Temperature out of range ({minTemp}–{maxTemp})")
-
-        tempChanged = app.set_temp != new_temp
-
-        with thermostatLock:
-            app.set_temp = new_temp
-            setLabel.text = "  Set\n[b]" + str(app.set_temp) + scaleUnits + "[/b]"
-            tempSlider.value = app.set_temp
-
-            if tempChanged:
-                log(LOG_LEVEL_STATE, CHILD_DEVICE_WEBSERVER, MSG_SUBTYPE_TEMPERATURE, str(app.set_temp))
-
-            setControlState(heatControl, "down" if heat == "on" else "normal")
-            setControlState(coolControl, "down" if cool == "on" else "normal")
-            setControlState(fanControl,  "down" if fan  == "on" else "normal")
-            setControlState(holdControl, "down" if hold == "on" else "normal")
-
-            app.heat = heat == "on"
-            app.cool = cool == "on"
-            app.fan = fan == "on"
-            app.hold = hold == "on"
-
-            reloadSchedule()
-
-        html = self._load_template("web/html/thermostat_set.html")
-
-        def highlight(val, active):
-            return ('<font color="red"><b>' + str(val) + '</b></font>') if active else str(val)
-
-        with thermostatLock:
-            dt_str = (self._kivy_to_html(dateLabel.text) + ", " +
-                      self._kivy_to_html(timeLabel.text))
-            replacements = {
-                "@@version@@": str(THERMOSTAT_VERSION),
-                "@@dt@@": dt_str,
-                "@@temp@@": highlight(app.set_temp, tempChanged),
-                "@@heat@@": highlight(heat, heat == "on"),
-                "@@cool@@": highlight(cool, cool == "on"),
-                "@@fan@@":  highlight(fan,  fan  == "on"),
-                "@@hold@@": highlight(hold, hold == "on"),
-            }
-            for key, val in replacements.items():
-                html = html.replace(key, val)
-
-        return html
-
-    @cherrypy.expose
-    def schedule(self):
-        log(LOG_LEVEL_INFO, CHILD_DEVICE_WEBSERVER, MSG_SUBTYPE_TEXT,
-            "Served thermostat_schedule.html to: " + cherrypy.request.remote.ip)
-        html = self._load_template("web/html/thermostat_schedule.html")
-
-        with thermostatLock:
-            dt_str = (self._kivy_to_html(dateLabel.text) + ", " +
-                      self._kivy_to_html(timeLabel.text))
-            replacements = {
-                "@@version@@": str(THERMOSTAT_VERSION),
-                "@@minTemp@@": str(minTemp),
-                "@@maxTemp@@": str(maxTemp),
-                "@@tempStep@@": str(tempStep),
-                "@@dt@@": dt_str,
-            }
-            for key, val in replacements.items():
-                html = html.replace(key, val)
-
-        return html
-
-    @cherrypy.expose
-    @cherrypy.tools.json_in()
-    def save(self):
-        log(LOG_LEVEL_STATE, CHILD_DEVICE_WEBSERVER, MSG_SUBTYPE_TEXT,
-            "Set schedule received from: " + cherrypy.request.remote.ip)
-        sched_data = cherrypy.request.json
-
-        with scheduleLock:
-            with open("thermostat_schedule.json", "w") as f:
-                f.write(json.dumps(sched_data, indent=4))
-
-        reloadSchedule()
-
-        html = self._load_template("web/html/thermostat_saved.html")
-
-        with thermostatLock:
-            dt_str = (self._kivy_to_html(dateLabel.text) + ", " +
-                      self._kivy_to_html(timeLabel.text))
-            html = html.replace("@@version@@", str(THERMOSTAT_VERSION))
-            html = html.replace("@@dt@@", dt_str)
-
-        return html
+def _web_log_state(subtype, msg):
+    log(LOG_LEVEL_STATE, CHILD_DEVICE_WEBSERVER, subtype, msg)
 
 
 def startWebServer():
@@ -1933,7 +1791,22 @@ def startWebServer():
          }
     )
 
-    cherrypy.quickstart(WebInterface(), '/', conf)
+    cherrypy.quickstart(WebInterface(
+        app=app,
+        status_provider=get_status_info,
+        set_setpoint=apply_set_temp,
+        set_controls=apply_controls,
+        reload_schedule=reloadSchedule,
+        version=THERMOSTAT_VERSION,
+        min_temp=minTemp,
+        max_temp=maxTemp,
+        temp_step=tempStep,
+        units=scaleUnits,
+        thermostat_lock=thermostatLock,
+        schedule_lock=scheduleLock,
+        log_info=_web_log_info,
+        log_state=_web_log_state,
+    ), '/', conf)
 
 
 ##############################################################################
