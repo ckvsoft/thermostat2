@@ -45,7 +45,6 @@ import traceback
 import urllib.request
 import uuid
 
-from hysteresistimer import HysteresisTimer
 from faikin import FaikinController
 
 try:
@@ -64,7 +63,7 @@ from kivy.core.window import Window
 #                                                                            #
 ##############################################################################
 
-kivy.require('2.3.0')  # mit requirements.txt konsistent
+kivy.require('2.3.0')  # keep in sync with requirements.txt
 
 from kivy.app import App
 from kivy.uix.togglebutton import ToggleButton
@@ -204,21 +203,17 @@ MSG_SUBTYPE_FAIKIN = "faikin"
 
 THERMOSTAT_VERSION = "2.3.1"
 
-# Debug settings
 
 debug = False
 useTestSchedule = False
-FAIKIN_CONTROL_HEARTBEAT = 60  # s: Steuerbefehl regelmäßig wiederholen
-fan_hysteresis_timer = HysteresisTimer(interval=10)
+FAIKIN_CONTROL_HEARTBEAT = 60  # seconds between repeated control commands
 
 Window.show_cursor = False
 
-# Threading Locks
 thermostatLock = threading.RLock()
 weatherLock = threading.Lock()
 scheduleLock = threading.RLock()
 
-# Thermostat persistent settings
 settings = JsonStore("thermostat_settings.json")
 state = JsonStore("thermostat_state.json")
 
@@ -227,21 +222,18 @@ t_locale = 'de_DE.utf8' if not (settings.exists("i18n")) else settings.get("i18n
 locale.setlocale(locale.LC_ALL, t_locale)
 gettext.install('thermostat', localedir='locales', names='gettext')
 
-# domesticwater
 domestic_water_enabled = False if not (settings.exists("domestic_water")) else settings.get("domestic_water")["enabled"]
 domestic_water_topic = '' if not (settings.exists("domestic_water")) else settings.get("domestic_water")["topic"]
 domestic_key_value_pair = '' if not (settings.exists("domestic_water")) else settings.get("domestic_water")["key_value_pair"]
 domestic_timeout_duration = 300 # 5 min
 domestic_last_message_time = time.time()
 
-# Hotwater (Heizstab on Shelly smart plug) control via SEUSS price data
+# Hot water (immersion heater on Shelly smart plug) control via SEUSS price data
 hotwater_settings = {} if not (settings.exists("hotwater_control")) else settings.get("hotwater_control")
 hotwater_control = HotWaterControl(hotwater_settings) if hotwater_module_available else None
 
-# Faikin (Daikin AC) setup:
 faikinEnabled = 0 if not (settings.exists("faikin")) else settings.get("faikin")["enabled"]
 faikinName = 'GuestAC' if not (settings.exists("faikin")) else settings.get("faikin")["name"]
-# MQTT settings/setup
 
 def on_disconnect(client, userdata, disconnect_flags, reason_code, properties):
     # paho-mqtt v2 / CallbackAPIVersion.VERSION2 signature
@@ -256,7 +248,6 @@ def mqtt_on_connect(client, userdata, connect_flags, reason_code, properties):
 
     print("MQTT Connected with result code: " + str(reason_code))
 
-    # ReasonCode unterstützt Vergleich mit 0 / hat .is_failure
     if reason_code == 0:
         if mqttReconnect:
             log(LOG_LEVEL_STATE, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT,
@@ -267,9 +258,9 @@ def mqtt_on_connect(client, userdata, connect_flags, reason_code, properties):
                 "Connected to: " + mqttServer + ":" + str(mqttPort))
 
         mqtt_subscriptions = [
-            (mqttSub_restart, 0),  # Subscribe to restart commands
-            (mqttSub_loglevel, 0),  # Subscribe to log level commands
-            (mqttSub_version, 0)   # Subscribe to version commands
+            (mqttSub_restart, 0),
+            (mqttSub_loglevel, 0),
+            (mqttSub_version, 0)
         ]
 
         if domestic_water_enabled:
@@ -301,8 +292,8 @@ if mqttAvailable:
     mqttSub_restart = str(mqttPubPrefix + "/" + mqttClientID + "/command/restart")
     mqttSub_loglevel = str(mqttPubPrefix + "/" + mqttClientID + "/command/loglevel")
     mqttSub_state = str(mqttPubPrefix + "/" + mqttClientID + "/command/state")
-    # Faikout/Faikin meldet seinen Status unter state/<name>/status
-    # (nicht "Faikin/<name>") — sonst bleibt outside_temp dauerhaft 0.0.
+    # Faikout publishes its status on state/<name>/status
+    # (not "Faikin/<name>"), otherwise outside_temp stays 0.0.
     mqttSub_faikin = str("state/" + faikinName + "/status")
 
     mqttPub_state = str(mqttPubPrefix + "/" + mqttClientID + "/state/status")
@@ -311,7 +302,6 @@ if mqttAvailable:
 else:
     mqttEnabled = False
 
-# Logging settings/setup
 
 LOG_FILE_NAME = "thermostat.log"
 
@@ -375,22 +365,19 @@ elif loggingChannel == 'file':
 elif loggingChannel == 'print':
     log = log_print
 else:
-    log = log_dummy  # Default case
+    log = log_dummy
 
 logLevel = LOG_LEVELS.get(loggingLevel, LOG_LEVEL_NONE)
 
-# Send presentations for Node
 
 log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_NAME, "Thermostat Starting Up...", msg_type=MSG_TYPE_PRESENTATION)
 log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_VERSION, THERMOSTAT_VERSION, msg_type=MSG_TYPE_PRESENTATION)
 
-# send presentations for all other child "sensors"
 
 for child in CHILD_DEVICES:
     if child != CHILD_DEVICE_NODE:
         log(LOG_LEVEL_STATE, child, child, "", msg_type=MSG_TYPE_PRESENTATION)
 
-# Various temperature settings:
 tempScale = settings.get("scale")["tempScale"]
 scaleUnits = "c" if tempScale == "metric" else "f"
 precipUnits = " mm" if tempScale == "metric" else '"'
@@ -409,7 +396,7 @@ currentFlowTemp = 0.0
 
 priorCorrected = -100.0
 setTemp = 22.0 if not (state.exists("state")) else state.get("state")["setTemp"]
-_last_persisted_state = None  # Cache für State-Write-Optimierung (SD-Karten-Schoner)
+_last_persisted_state = None  # cache to avoid needless writes (spares the SD card)
 
 tempHysteresis = 0.5 if not (settings.exists("thermostat")) else settings.get("thermostat")["tempHysteresis"]
 
@@ -447,7 +434,6 @@ log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/temperatu
 log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/temperature/minUITimeout", str(minUITimeout),
     timestamp=False)
 
-# Temperature calibration settings:
 
 elevation = 0 if not (settings.exists("calibration")) else settings.get("calibration")["elevation"]
 boilingPoint = (100.0 - 0.003353 * elevation) if tempScale == "metric" else (212.0 - 0.00184 * elevation)
@@ -473,7 +459,6 @@ log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/calibrati
 log(LOG_LEVEL_DEBUG, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/calibration/measuredRange", str(measuredRange),
     timestamp=False)
 
-# UI Slider settings:
 
 minTemp = 15.0 if not (settings.exists("thermostat")) else settings.get("thermostat")["minTemp"]
 maxTemp = 30.0 if not (settings.exists("thermostat")) else settings.get("thermostat")["maxTemp"]
@@ -490,7 +475,6 @@ except Exception as e:
     log(LOG_LEVEL_ERROR, CHILD_DEVICE_TEMP, MSG_SUBTYPE_TEXT, f"Sensor init failed: {e}")
     tempSensor = None
 
-# PIR (Motion Sensor) setup:
 pirEnabled = 0 if not (settings.exists("pir")) else settings.get("pir")["pirEnabled"]
 pirPin = 5 if not (settings.exists("pir")) else settings.get("pir")["pirPin"]
 
@@ -510,7 +494,6 @@ log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/pir/ignor
 log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/pir/ignoreTo", str(pirIgnoreToStr),
     timestamp=False)
 
-# GPIO Pin setup and utility routines:
 
 coolPin = 18 if not (settings.exists("thermostat")) else settings.get("thermostat")["coolPin"]
 heatPin = 23 if not (settings.exists("thermostat")) else settings.get("thermostat")["heatPin"]
@@ -540,7 +523,6 @@ log(LOG_LEVEL_INFO, CHILD_DEVICE_PIR, MSG_SUBTYPE_TRIPPED, str(pirPin), timestam
 
 controlColours = {
     "normal": (1.0, 1.0, 1.0, 1.0),
-    # "K\u00fchlen": (0.0, 0.0, 1.0, 0.4),
     _("Cool"): (0.0, 0.0, 1.0, 0.4),
     _("Heat"): (1.0, 0.0, 0.0, 1.0),
     _("Fan"): (0.0, 1.0, 0.0, 0.4),
@@ -669,7 +651,7 @@ screenMgr = None
 ##############################################################################
 
 def _get_faikin_snapshot():
-    """Aktueller Thermostat-Zustand für den FaikinController."""
+    """Current thermostat snapshot for the FaikinController."""
     return {
         "currentTemp": currentTemp,
         "heat": heatControl.state == "down",
@@ -883,7 +865,6 @@ def display_forecast_weather(dt):
 #                                                                            #
 ##############################################################################
 
-# Main furnace/AC system control function:
 
 def change_system_settings():
     with thermostatLock:
@@ -932,7 +913,7 @@ def change_system_settings():
                 GPIO.output(fanPin, GPIO.LOW)
                 log(LOG_LEVEL_STATE, CHILD_DEVICE_FAN, MSG_SUBTYPE_TEXT, "fan off (idle)")
 
-        # save the thermostat state in case of restart — nur bei Änderung (SD-Karten-Schoner)
+        # persist state across restarts, only when changed (spares the SD card)
         global _last_persisted_state
         current_state = (setTemp, heatControl.state, coolControl.state,
                          fanControl.state, holdControl.state)
@@ -958,11 +939,10 @@ def change_system_settings():
         if mqttEnabled:
             faikin.publish_control()
 
-# This callback will be bound to the touch screen UI buttons:
 
 def control_callback(control):
     with thermostatLock:
-        setControlState(control, control.state)  # make sure we change the background colour!
+        setControlState(control, control.state)
 
         if control is coolControl:
             if control.state == "down":
@@ -975,7 +955,6 @@ def control_callback(control):
             reloadSchedule()
 
 
-# Check the current sensor temperature
 
 def check_sensor_temp(dt):
     with thermostatLock:
@@ -1015,7 +994,6 @@ def check_sensor_temp(dt):
                 log(LOG_LEVEL_ERROR, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT,
                     f"hotwater control error: {e}")
 
-# This is called when the desired temp slider is updated:
 def update_set_temp(slider, value):
     with thermostatLock:
         global setTemp
@@ -1026,7 +1004,6 @@ def update_set_temp(slider, value):
             log(LOG_LEVEL_STATE, CHILD_DEVICE_UICONTROL_SLIDER, MSG_SUBTYPE_TEMPERATURE, str(setTemp))
 
 
-# Check the PIR motion sensor status
 def check_pir(pin):
     global minUITimer
 
@@ -1057,7 +1034,6 @@ def check_pir(pin):
             log(LOG_LEVEL_DEBUG, CHILD_DEVICE_PIR, MSG_SUBTYPE_TRIPPED, "0")
 
 
-# Minimal UI Display functions and classes
 
 def show_minimal_ui(dt):
     with thermostatLock:
@@ -1195,7 +1171,6 @@ class MinimalScreen(Screen):
                     pass
                 else:
                     self.manager.current = "thermostatUI"
-                    # screen_on()
                     log(LOG_LEVEL_DEBUG, CHILD_DEVICE_SCREEN, MSG_SUBTYPE_TEXT, "Full")
             return True
 
@@ -1208,7 +1183,7 @@ class MinimalScreen(Screen):
 
 def get_ip_address():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.settimeout(10)  # 10 seconds
+    s.settimeout(10)
     try:
         s.connect(("8.8.8.8", 80))  # Google DNS server
         ip = s.getsockname()[0]
@@ -1224,7 +1199,6 @@ def get_ip_address():
 def getVersion(message):
     payload = message.payload.decode('utf-8')
 
-    # Zeigen Sie den Inhalt der Nachricht und das Empfangsdatum und die Uhrzeit an
     log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/getVersion",
         f"Empfangene Nachricht: {payload}", single=True)
     log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/getVersion",
@@ -1258,7 +1232,7 @@ def restart(message):
         except Exception:
             pass
 
-    os.execl(sys.executable, 'python', __file__, *sys.argv[1:])  # kehrt nicht zurück
+    os.execl(sys.executable, 'python', __file__, *sys.argv[1:])  # does not return
 
 def setLogLevel(msg):
     global logLevel
@@ -1324,7 +1298,7 @@ def update_hotwater_ui(status):
                 w.update_bars(status)
             except Exception:
                 pass
-        # Akkuladezeile: SOC + charging/discharging/idle from
+        # battery line: SOC + charging/discharging/idle from
         # SEUSS /api/battery (display only).
         try:
             soc = status.get("battery_soc_percent")
@@ -1353,7 +1327,7 @@ def setMqttFanCommand(state):
         mqttc.publish(mqttPub_fanstate, state)
 
 if mqttEnabled:
-    # paho-mqtt v2 verlangt CallbackAPIVersion, v1 kennt das Argument nicht
+    # paho-mqtt v2 requires CallbackAPIVersion; v1 does not know the argument
     try:
         mqttc = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
                             client_id=mqttClientID, protocol=mqtt.MQTTv5)
@@ -1369,7 +1343,6 @@ if mqttEnabled:
     if domestic_water_enabled:
         mqttc.message_callback_add(domestic_water_topic, lambda client, userdata, message: set_domestic_water(message))
 
-    # FaikinController kennt nur die von aussen hereingereichten Abhaengigkeiten
     faikin = FaikinController(
         name=faikinName,
         enabled=faikinEnabled,
@@ -1414,15 +1387,12 @@ class ThermostatApp(App):
     def build(self):
         global screenMgr
 
-        # Set up the thermostat UI layout:
         thermostatUI = FloatLayout(size=(800, 480))
 
-        # Make the background black:
         with thermostatUI.canvas.before:
             Color(0.0, 0.0, 0.0, 1)
             self.rect = Rectangle(size=(800, 480), pos=thermostatUI.pos)
 
-        # Create the rest of the UI objects ( and bind them to callbacks, if necessary ):
 
         wimg = Image(source='web/images/logo.png')
 
@@ -1459,7 +1429,6 @@ class ThermostatApp(App):
 
         tempSlider.bind(on_touch_down=update_set_temp, on_touch_move=update_set_temp)
 
-        # set sizing and position info
 
         wimg.size = (80, 80)
         wimg.size_hint = (None, None)
@@ -1544,7 +1513,6 @@ class ThermostatApp(App):
         forecastTomoRainLabel.pos = (30, 9)
         forecastTomoRainValueLabel.pos = (150, 9)
 
-        # Add the UI elements to the thermostat UI layout:
         thermostatUI.add_widget(wimg)
         thermostatUI.add_widget(coolControl)
         thermostatUI.add_widget(heatControl)
@@ -1610,7 +1578,6 @@ class ThermostatApp(App):
 
         layout = thermostatUI
 
-        # Minimap UI initialization
 
         if minUIEnabled:
             uiScreen = Screen(name="thermostatUI")
@@ -1631,7 +1598,7 @@ class ThermostatApp(App):
             altHeaterLabel.pos = (430, 165)
             altHeaterValueLabel.pos = (575, 163)
 
-            # Akku-Zeile: per settings key "battery_line_pos": [x, y]
+            # battery line: per settings key "battery_line_pos": [x, y]
             # (thermostat_settings.json) tweakable without git roundtrips.
             battery_pos = list(settings.get("battery_line_pos")) \
                 if settings.exists("battery_line_pos") else [35, 225]
@@ -1665,15 +1632,12 @@ class ThermostatApp(App):
             if pirEnabled:
                 Clock.schedule_interval(check_pir, pirCheckInterval)
 
-        # Start checking the temperature
         Clock.schedule_interval(check_sensor_temp, tempCheckInterval)
 
-        # Hotwater control: push price/heater status to the UI labels
         if hotwater_control is not None and hotwater_control.enabled:
             hotwater_control.set_ui_callback(update_hotwater_ui)
             hotwater_control.start()
 
-        # Show the current weather & forecast
         Clock.schedule_once(display_current_weather, 5)
         Clock.schedule_once(display_forecast_weather, 10)
 
@@ -1767,7 +1731,7 @@ def reloadSchedule():
 ##############################################################################
 
 class WebInterface(object):
-    # HTML-Templates einmal beim Start laden statt bei jedem Request neu lesen
+    # load HTML templates once at startup instead of every request
     _template_cache = {}
 
     @classmethod
@@ -1779,7 +1743,7 @@ class WebInterface(object):
 
     @staticmethod
     def _kivy_to_html(text):
-        """Kivy-Markup-Tags in HTML umwandeln."""
+        """Convert Kivy markup tags to HTML."""
         return (text.replace("[b]", "<b>")
                     .replace("[/b]", "</b>")
                     .replace("\n", "<br>")
@@ -1837,7 +1801,7 @@ class WebInterface(object):
         log(LOG_LEVEL_INFO, CHILD_DEVICE_WEBSERVER, MSG_SUBTYPE_TEXT,
             "Set thermostat received from: " + cherrypy.request.remote.ip)
 
-        # Eingabe-Validierung — verhindert ValueError-Crash bei ungültigem Input
+        # input validation, avoids a ValueError crash on bad input
         try:
             new_temp = float(temp)
         except (TypeError, ValueError):
@@ -1932,7 +1896,7 @@ class WebInterface(object):
 
 def startWebServer():
     host = "discover" if not (settings.exists("web")) else settings.get("web")["host"]
-    # Wenn host = "discover", verwende lokale IP-Adresse
+    # when host = "discover", use the local IP address
     cherrypy.server.socket_host = host if host != "discover" else get_ip_address()
     cherrypy.server.socket_port = 80 if not (settings.exists("web")) else settings.get("web")["port"]
 
@@ -1984,18 +1948,15 @@ def startWebServer():
 ##############################################################################
 
 def main():
-    # Start Web Server
     webThread = threading.Thread(target=startWebServer)
     webThread.daemon = True
     webThread.start()
 
-    # Start Scheduler
     reloadSchedule()
     schedThread = threading.Thread(target=startScheduler)
     schedThread.daemon = True
     schedThread.start()
 
-    # Start Thermostat UI/App
     ThermostatApp().run()
 
 if __name__ == '__main__':

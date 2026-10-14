@@ -1,47 +1,27 @@
 # -*- coding: utf-8 -*-
 
-"""Faikin/Faikout (Daikin) Anlagensteuerung.
+"""Daikin AC control via a Faikout/Faikin MQTT module.
 
-Kapselt die MQTT-Kommunikation mit einem Faikout-Modul sowie die
-Uebersetzung des Thermostat-Zustands in gueltige `control`-Befehle.
-
-Bewusst frei von Kivy/GPIO/globalen Thermostat-Variablen: alle
-Abhaengigkeiten werden hereingereicht (Dependency Injection), damit
-dieses Modul ohne Display/GPIO importiert und getestet werden kann.
+Dependencies are injected, so this module stays importable and testable
+without Kivy or GPIO.
 """
 
 import json
 import time
 import traceback
 
+from hysteresistimer import HysteresisTimer
+
 
 class FaikinController(object):
-    """Steuert eine Daikin-Anlage ueber ein Faikout/Faikin MQTT-Modul.
+    """Drives a Daikin unit through a Faikout/Faikin MQTT module.
 
-    Parameter
-    ---------
-    name : str
-        Geraetename (MQTT-Hostname), z. B. "DaikinWZ".
-    enabled : bool/int
-        Faikin-Steuerung aktiv.
-    summer_temp : float
-        Ab dieser Aussentemperatur wird nicht geheizt.
-    publish : callable(topic, payload)
-        MQTT-Publish-Funktion.
-    get_snapshot : callable() -> dict
-        Liefert den aktuellen Thermostat-Zustand mit den Schluesseln
-        ``currentTemp`` (float), ``heat`` (bool), ``cool`` (bool) und
-        ``target`` (float, Sollwert).
-    state_topic : str
-        MQTT-Topic, auf dem die Thermostat-State-JSON veroeffentlicht wird.
-    heartbeat : float
-        Sekunden zwischen wiederholten Steuerbefehlen (0 = aus).
-    log_debug, log_error : callable(msg)
-        Optionale Log-Callbacks.
+    get_snapshot() must return the current thermostat state as a dict
+    with keys currentTemp, heat (bool), cool (bool) and target.
     """
 
     def __init__(self, name, enabled, summer_temp, publish, get_snapshot,
-                 state_topic, heartbeat=60.0,
+                 state_topic, heartbeat=60.0, fan_interval=10.0,
                  log_debug=None, log_error=None):
         self.name = name
         self.enabled = bool(enabled)
@@ -58,19 +38,18 @@ class FaikinController(object):
         self.prev_target = None
         self.prev_mode = None
         self.prev_power = None
+        self.prev_fan = None
         self.last_control_time = 0.0
-
-    # -- Status vom Geraet -------------------------------------------------
+        self.fan_timer = HysteresisTimer(fan_interval)
 
     def handle_status_message(self, message):
-        """Callback fuer ``state/<name>/status`` (Faikout-Status)."""
         try:
             payload = message.payload
             if isinstance(payload, bytes):
                 payload = payload.decode('utf-8')
             data = json.loads(payload)
 
-            # "outside" kann fehlen, None, einzelner Wert oder Liste sein
+            # "outside" may be absent, null, a single value or a list
             val = data.get('outside')
             if val is None:
                 return
@@ -85,11 +64,8 @@ class FaikinController(object):
         except (json.JSONDecodeError, UnicodeDecodeError, ValueError, TypeError) as e:
             self._log_error("Bad faikin payload: %s" % e)
 
-    # -- Zustand -----------------------------------------------------------
-
     def _normalized_outside(self):
         val = self.outside_temp
-        # Defensive: outside_temp koennte aus altem Code als Liste vorliegen
         if isinstance(val, list):
             numeric = [v for v in val if isinstance(v, (int, float))]
             val = sum(numeric) / len(numeric) if numeric else 0.0
@@ -98,11 +74,7 @@ class FaikinController(object):
         return val
 
     def build_state(self):
-        """Uebersetzt den Thermostat-Zustand in die State-JSON.
-
-        Enthaelt bewusst KEINE Steuerattribute (power/temp) — das ist
-        die reine Zustandsbeschreibung des Thermostats.
-        """
+        """Thermostat state as JSON (no control attributes like power/temp)."""
         snap = self._get_snapshot()
         current_temp = snap["currentTemp"]
         heat_down = bool(snap.get("heat"))
@@ -137,18 +109,13 @@ class FaikinController(object):
             "autot": targettemp,
         }
 
-    # -- Steuerbefehl ------------------------------------------------------
-
     def publish_control(self):
-        """Veroeffentlicht State-JSON (eigenes Topic) und ggf. einen
-        gueltigen ``control``-Befehl an die Daikin.
+        """Publish the state JSON and, when needed, a control command.
 
-        Auf das control-Topic gehoert ein Steuerbefehl mit
-        ``power``/``temp``/``mode``/``fan``/``demand`` — NICHT die
-        State-JSON (die Faikout ignoriert sie, da ``power`` fehlt).
+        The control topic expects power/temp/mode/fan/demand; Faikout
+        ignores the plain state JSON because it has no "power".
         """
-        snap = self._get_snapshot()
-        cur_temp = snap["currentTemp"]
+        cur_temp = self._get_snapshot()["currentTemp"]
 
         try:
             state_data = self.build_state()
@@ -162,10 +129,9 @@ class FaikinController(object):
             power = state_data["autop"]
             rounded_temp = state_data["rounded"]
 
-            tolerance = 0.2       # Erlaubte Temperaturschwankung
-            fan_hysteresis = 0.5  # Verhindert zu schnelle Luefteraenderungen
+            tolerance = 0.2
+            fan_hysteresis = 0.5
 
-            # Ohne gueltige aktuelle Temperatur kann keine Regelung stattfinden
             if cur_temp is None:
                 return
             if self.prev_temp is None:
@@ -173,16 +139,15 @@ class FaikinController(object):
 
             delta_temp = cur_temp - self.prev_temp
 
-            # Regelung bei zu grosser Abweichung
             if (mode == "H" and targettemp + 4.0 < rounded_temp) or \
                (mode == "C" and targettemp - 4.0 > rounded_temp):
                 power = False
 
             powerful = False
-            fan = "3"      # Automatischer Modus als Standard
+            fan = "3"
             demand = 70
 
-            if mode == "H":  # Heizmodus
+            if mode == "H":
                 temp_diff = cur_temp - targettemp
                 if abs(temp_diff) <= tolerance:
                     fan, demand = "3", 70
@@ -193,7 +158,7 @@ class FaikinController(object):
                     fan = "5" if abs(temp_diff) > 2 else "4"
                     demand = 100 if abs(temp_diff) > 2 else 95
 
-            elif mode == "C":  # Kuehlmodus
+            elif mode == "C":
                 temp_diff = targettemp - cur_temp
                 if abs(temp_diff) <= tolerance:
                     fan, demand = "3", 70
@@ -204,7 +169,14 @@ class FaikinController(object):
                     fan = "1" if abs(temp_diff) > 2 else "2"
                     demand = 30 if abs(temp_diff) > 2 else 50
 
-            # Steuerbefehl nur bei relevanter Aenderung oder als Heartbeat
+            # Rate-limit fan changes so the unit does not flip-flop; a new
+            # setpoint may change the fan immediately.
+            if self.prev_target is not None and self.prev_target != targettemp:
+                self.fan_timer.last_trigger_time = 0
+            if self.prev_fan is not None and fan != self.prev_fan \
+                    and not self.fan_timer.check():
+                fan = self.prev_fan
+
             now = time.time()
             control_changed = (
                 self.prev_target is None
@@ -231,10 +203,10 @@ class FaikinController(object):
             self.prev_target = targettemp
             self.prev_mode = mode
             self.prev_power = power
+            self.prev_fan = fan
 
         except Exception as e:
             self._log_error("%s\n%s" % (e, traceback.format_exc()))
         finally:
-            # prev_temp IMMER aktualisieren, auch bei early-return oder Exception
             if cur_temp is not None:
                 self.prev_temp = cur_temp
