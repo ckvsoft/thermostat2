@@ -50,6 +50,7 @@ from config import Config
 from weather import build_urls, get_weather, get_cardinal_direction, get_precip_amount
 from app_state import AppState
 from web import WebInterface
+from scheduler import Scheduler
 
 try:
     from hotwater_control import HotWaterControl
@@ -92,7 +93,6 @@ from kivy.uix.boxlayout import BoxLayout
 ##############################################################################
 
 import cherrypy
-import schedule
 import subprocess
 import locale
 
@@ -935,14 +935,14 @@ def control_callback(control):
                 setControlState(heatControl, "normal")
                 app.heat = False
             app.cool = control.state == "down"
-            reloadSchedule()
+            scheduler.reload()
 
         if control is heatControl:
             if control.state == "down":
                 setControlState(coolControl, "normal")
                 app.cool = False
             app.heat = control.state == "down"
-            reloadSchedule()
+            scheduler.reload()
 
         if control is fanControl:
             app.fan = control.state == "down"
@@ -1639,85 +1639,6 @@ class ThermostatApp(App):
 
 ##############################################################################
 #                                                                            #
-#       Scheduler Implementation                                             #
-#                                                                            #
-##############################################################################
-
-def startScheduler():
-    log(LOG_LEVEL_INFO, CHILD_DEVICE_SCHEDULER, MSG_SUBTYPE_TEXT, "Started")
-    while True:
-        try:
-            if not app.hold:
-                with scheduleLock:
-                    log(LOG_LEVEL_DEBUG, CHILD_DEVICE_SCHEDULER, MSG_SUBTYPE_TEXT, "Running pending")
-                    schedule.run_pending()
-        except Exception as e:
-            log(LOG_LEVEL_ERROR, CHILD_DEVICE_SCHEDULER, MSG_SUBTYPE_TEXT, f"Scheduler error: {e}")
-
-        time.sleep(10)
-
-
-def setScheduledTemp(temp):
-    with thermostatLock:
-        if not app.hold:
-            app.set_temp = round(temp, 1)
-            setLabel.text = "  Set\n[b]" + str(app.set_temp) + scaleUnits + "[/b]"
-            tempSlider.value = app.set_temp
-            log(LOG_LEVEL_STATE, CHILD_DEVICE_SCHEDULER, MSG_SUBTYPE_TEMPERATURE, str(app.set_temp))
-
-
-def getTestSchedule():
-    days = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
-    testSched = {}
-    base_low  = 19.0 if tempScale == "metric" else 68.0
-    base_high = 22.0 if tempScale == "metric" else 72.0
-
-    for i, day in enumerate(days):
-        tempList = []
-        for minute in range(60 * 24):
-            hrs, mins = divmod(minute, 60)
-            base = base_low if minute % 2 == 1 else base_high
-            tempList.append([
-                f"{hrs:02d}:{mins:02d}",
-                float(i + 1) / 10.0 + base
-            ])
-        testSched[day] = tempList
-
-    return testSched
-
-
-def reloadSchedule():
-    with scheduleLock:
-        schedule.clear()
-
-        activeSched = None
-
-        with thermostatLock:
-            thermoSched = JsonStore("thermostat_schedule.json")
-
-            if not app.hold:
-                if app.heat:
-                    activeSched = thermoSched["heat"]
-                    log(LOG_LEVEL_INFO, CHILD_DEVICE_SCHEDULER, MSG_SUBTYPE_CUSTOM + "/load", "heat")
-                elif app.cool:
-                    activeSched = thermoSched["cool"]
-                    log(LOG_LEVEL_INFO, CHILD_DEVICE_SCHEDULER, MSG_SUBTYPE_CUSTOM + "/load", "cool")
-
-                if useTestSchedule:
-                    activeSched = getTestSchedule()
-                    log(LOG_LEVEL_INFO, CHILD_DEVICE_SCHEDULER, MSG_SUBTYPE_CUSTOM + "/load", "test")
-                    print("Using Test Schedule!!!")
-
-        if activeSched is not None:
-            for day, entries in activeSched.items():
-                for entry in entries:
-                    getattr(schedule.every(), day).at(entry[0]).do(setScheduledTemp, entry[1])
-                    log(LOG_LEVEL_DEBUG, CHILD_DEVICE_SCHEDULER, MSG_SUBTYPE_TEXT,
-                        f"Set {day}, at: {entry[0]} = {entry[1]}{scaleUnits}")
-
-
-##############################################################################
-#                                                                            #
 #       Web Server Interface                                                 #
 #                                                                            #
 ##############################################################################
@@ -1745,6 +1666,32 @@ def _web_log_info(subtype, msg):
 
 def _web_log_state(subtype, msg):
     log(LOG_LEVEL_STATE, CHILD_DEVICE_WEBSERVER, subtype, msg)
+
+
+class _SchedulerLog(object):
+    def info(self, subtype, msg):
+        log(LOG_LEVEL_INFO, CHILD_DEVICE_SCHEDULER, subtype, msg)
+
+    def state(self, subtype, msg):
+        log(LOG_LEVEL_STATE, CHILD_DEVICE_SCHEDULER, subtype, msg)
+
+    def debug(self, subtype, msg):
+        log(LOG_LEVEL_DEBUG, CHILD_DEVICE_SCHEDULER, subtype, msg)
+
+    def error(self, subtype, msg):
+        log(LOG_LEVEL_ERROR, CHILD_DEVICE_SCHEDULER, subtype, msg)
+
+
+scheduler = Scheduler(
+    app=app,
+    apply_set_temp=apply_set_temp,
+    temp_scale=tempScale,
+    units=scaleUnits,
+    use_test_schedule=useTestSchedule,
+    schedule_lock=scheduleLock,
+    thermostat_lock=thermostatLock,
+    log=_SchedulerLog(),
+)
 
 
 def startWebServer():
@@ -1796,7 +1743,7 @@ def startWebServer():
         status_provider=get_status_info,
         set_setpoint=apply_set_temp,
         set_controls=apply_controls,
-        reload_schedule=reloadSchedule,
+        reload_schedule=scheduler.reload,
         version=THERMOSTAT_VERSION,
         min_temp=minTemp,
         max_temp=maxTemp,
@@ -1820,8 +1767,8 @@ def main():
     webThread.daemon = True
     webThread.start()
 
-    reloadSchedule()
-    schedThread = threading.Thread(target=startScheduler)
+    scheduler.reload()
+    schedThread = threading.Thread(target=scheduler.run_forever)
     schedThread.daemon = True
     schedThread.start()
 
