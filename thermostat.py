@@ -44,7 +44,7 @@ import time
 
 from faikin import FaikinController
 from config import Config
-from weather import build_urls, get_weather, get_cardinal_direction, get_precip_amount
+from weather import build_urls, WeatherView
 from app_state import AppState
 from web import WebInterface
 from scheduler import Scheduler
@@ -530,121 +530,24 @@ forecastRefreshInterval = cfg.get("weather", "forecastRefreshInterval") * 60
 weatherExceptionInterval = cfg.get("weather", "weatherExceptionInterval") * 60
 
 
-def display_current_weather(dt):
-    with weatherLock:
-        interval = weatherRefreshInterval
-
-        try:
-            weather = get_weather(weatherURLCurrent, weatherURLTimeout)
-
-            ui.weatherImg.source = "web/images/" + weather["weather"][0]["icon"] + ".png"
-
-            ui.weatherSummaryLabel.text = "[b]" + weather["weather"][0]["description"].title() + "[/b]"
-
-            ui.weatherTempValueLabel.text = str(int(round(weather["main"]["temp"], 0))) + scaleUnits
-            ui.weatherHumidityValueLabel.text = str(weather["main"]["humidity"]) + "%"
-            ui.weatherWindValueLabel.text = str(int(round(weather["wind"]["speed"] * windFactor))) + windUnits + " " + get_cardinal_direction(weather["wind"]["deg"])
-            ui.weatherCloudsValueLabel.text = str(weather["clouds"]["all"]) + "%"
-            ui.weatherSunValueLabel.text = time.strftime("%H:%M", time.localtime(weather["sys"]["sunrise"])) + ", " + time.strftime("%H:%M", time.localtime(weather["sys"]["sunset"])) + ""
-
-            log(LOG_LEVEL_INFO, CHILD_DEVICE_WEATHER_CURR, MSG_SUBTYPE_TEXT, json.dumps(weather))
-
-        except Exception as e:
-            interval = weatherExceptionInterval
-
-            ui.weatherImg.source = "web/images/na.png"
-            ui.weatherSummaryLabel.text = "N/A"
-            ui.weatherTempValueLabel.text = "N/A"
-            ui.weatherHumidityValueLabel.text = "N/A"
-            ui.weatherWindValueLabel.text = "N/A"
-            ui.weatherCloudsValueLabel.text = "N/A"
-            ui.weatherSunValueLabel.text = "N/A"
-
-            log(LOG_LEVEL_ERROR, CHILD_DEVICE_WEATHER_CURR, MSG_SUBTYPE_TEXT, "Update FAILED!")
-            log(LOG_LEVEL_ERROR, CHILD_DEVICE_WEATHER_CURR, MSG_SUBTYPE_TEXT, f"Exception {e}")
-
-        Clock.schedule_once(display_current_weather, interval)
-
-
-def display_forecast_weather(dt):
-    with weatherLock:
-        interval = forecastRefreshInterval
-
-        try:
-            forecast = get_weather(weatherURLForecast, weatherURLTimeout)
-
-            today = forecast["list"][0]
-            tomo = forecast["list"][1]
-
-            ui.forecastTodayImg.source = "web/images/" + today["weather"][0]["icon"] + ".png"
-            ui.forecastTodaySummaryLabel.text = "[b]" + today["weather"][0]["description"].title() + "[/b]"
-            ui.forecastTodayHighValueLabel.text = str(int(round(today["temp"]["max"], 0))) + scaleUnits + ", " + _("Low") + ": " + str(int(round(today["temp"]["min"], 0))) + scaleUnits
-            ui.forecastTodayHumidityValueLabel.text = str(today["humidity"]) + "%"
-            ui.forecastTodayWindValueLabel.text = str(int(round(today["speed"] * windFactor))) + windUnits + " " + get_cardinal_direction(today["deg"])
-            ui.forecastTodayCloudsValueLabel.text = str(today["clouds"]) + "%"
-
-            rainValueText = ""
-            if "rain" in today or "snow" in today:
-                if "rain" in today:
-                    ui.forecastTodayRainLabel.text = _("Rain") + ":"
-                    rainValueText = get_precip_amount(today["rain"], precipFactor, precipRound, tempScale) + precipUnits
-                    if "snow" in today:
-                        rainValueText += ", " + _("Snow") + ": " + get_precip_amount(today["snow"], precipFactor, precipRound, tempScale) + precipUnits
-                else:
-                    ui.forecastTodayRainLabel.text = _("Snow") + ":"
-                    rainValueText = get_precip_amount(today["snow"], precipFactor, precipRound, tempScale) + precipUnits
-
-            ui.forecastTodayRainValueLabel.text = rainValueText
-
-            ui.forecastTomoImg.source = "web/images/" + tomo["weather"][0]["icon"] + ".png"
-            ui.forecastTomoSummaryLabel.text = "[b]" + tomo["weather"][0]["description"].title() + "[/b]"
-            ui.forecastTomoHighValueLabel.text = str(int(round(tomo["temp"]["max"], 0))) + scaleUnits + ", " + _("Low") + ": " + str(int(round(tomo["temp"]["min"], 0))) + scaleUnits
-            ui.forecastTomoHumidityValueLabel.text = str(tomo["humidity"]) + "%"
-            ui.forecastTomoWindValueLabel.text = str(int(round(tomo["speed"] * windFactor))) + windUnits + " " + get_cardinal_direction(tomo["deg"])
-            ui.forecastTomoCloudsValueLabel.text = str(tomo["clouds"]) + "%"
-
-            rainValueText = ""
-            if "rain" in tomo or "snow" in tomo:
-                if "rain" in tomo:
-                    ui.forecastTomoRainLabel.text = _("Rain") + ":"
-                    rainValueText = get_precip_amount(tomo["rain"], precipFactor, precipRound, tempScale) + precipUnits
-                    if "snow" in tomo:
-                        rainValueText += ", " + _("Snow") + ": " + get_precip_amount(tomo["snow"], precipFactor, precipRound, tempScale) + precipUnits
-                else:
-                    ui.forecastTomoRainLabel.text = _("Snow") + ":"
-                    rainValueText = get_precip_amount(tomo["snow"], precipFactor, precipRound, tempScale) + precipUnits
-
-            ui.forecastTomoRainValueLabel.text = rainValueText
-
-            log(LOG_LEVEL_INFO, CHILD_DEVICE_WEATHER_CURR, MSG_SUBTYPE_TEXT, json.dumps(today["weather"][0]))
-            log(LOG_LEVEL_INFO, CHILD_DEVICE_WEATHER_CURR, MSG_SUBTYPE_TEXT, json.dumps(tomo["weather"][0]))
-
-        except Exception as e:
-            interval = weatherExceptionInterval
-
-            ui.forecastTodayImg.source = "web/images/na.png"
-            ui.forecastTodaySummaryLabel.text = ""
-            ui.forecastTodayRainLabel.text = ""
-            ui.forecastTodayRainValueLabel.text = ""
-            ui.forecastTodayHighValueLabel.text = "N/A"
-            ui.forecastTodayHumidityValueLabel.text = "N/A"
-            ui.forecastTodayWindValueLabel.text = "N/A"
-            ui.forecastTodayCloudsValueLabel.text = "N/A"
-            ui.forecastTodayRainLabel.text = ""
-            ui.forecastTodayRainValueLabel.text = ""
-
-            ui.forecastTomoImg.source = "web/images/na.png"
-            ui.forecastTomoSummaryLabel.text = ""
-            ui.forecastTomoHighValueLabel.text = "N/A"
-            ui.forecastTomoHumidityValueLabel.text = "N/A"
-            ui.forecastTomoWindValueLabel.text = "N/A"
-            ui.forecastTomoCloudsValueLabel.text = "N/A"
-            ui.forecastTomoRainLabel.text = ""
-            ui.forecastTomoRainValueLabel.text = ""
-            log(LOG_LEVEL_ERROR, CHILD_DEVICE_WEATHER_FCAST_TODAY, MSG_SUBTYPE_TEXT, "Update FAILED!")
-            log(LOG_LEVEL_ERROR, CHILD_DEVICE_WEATHER_FCAST_TODAY, MSG_SUBTYPE_TEXT, f"Exception {e}")
-
-        Clock.schedule_once(display_forecast_weather, interval)
+weather_view = WeatherView(
+    ui=ui,
+    log=log,
+    lock=weatherLock,
+    current_url=weatherURLCurrent,
+    forecast_url=weatherURLForecast,
+    timeout=weatherURLTimeout,
+    current_interval=weatherRefreshInterval,
+    forecast_interval=forecastRefreshInterval,
+    exception_interval=weatherExceptionInterval,
+    units=scaleUnits,
+    wind_factor=windFactor,
+    wind_units=windUnits,
+    precip_factor=precipFactor,
+    precip_round=precipRound,
+    precip_units=precipUnits,
+    units_system=tempScale,
+)
 
 ##############################################################################
 #                                                                            #
@@ -1002,8 +905,7 @@ class ThermostatApp(App):
             hotwater_control.set_ui_callback(handlers.update_hotwater_ui)
             hotwater_control.start()
 
-        Clock.schedule_once(display_current_weather, 5)
-        Clock.schedule_once(display_forecast_weather, 10)
+        weather_view.start()
 
         return layout
 
