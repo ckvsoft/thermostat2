@@ -101,9 +101,7 @@ MSG_SUBTYPE_CUSTOM = "custom"
 MSG_SUBTYPE_TEXT = "text"
 MSG_SUBTYPE_FAIKIN = "faikin"
 
-THERMOSTAT_VERSION = "2.4.1"
-
-FAIKIN_CONTROL_HEARTBEAT = 60  # seconds between repeated control commands
+THERMOSTAT_VERSION = "2.4.2"
 
 
 class _SchedulerLog(object):
@@ -348,7 +346,6 @@ class Thermostat(object):
                 publish=self.mqtt.publish,
                 get_snapshot=self._get_faikin_snapshot,
                 state_topic=self.mqtt.state_topic("status"),
-                heartbeat=FAIKIN_CONTROL_HEARTBEAT,
                 log_debug=self._faikin_log_debug,
                 log_error=self._faikin_log_error,
             )
