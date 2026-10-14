@@ -53,6 +53,8 @@ from web import WebInterface
 from scheduler import Scheduler
 import ui
 from mqtt import MqttService
+from logging_setup import (Logger, LOG_LEVEL_DEBUG, LOG_LEVEL_INFO,
+                           LOG_LEVEL_ERROR, LOG_LEVEL_STATE, LOG_LEVEL_NONE)
 
 try:
     from hotwater_control import HotWaterControl
@@ -136,7 +138,6 @@ except (ImportError, OSError, RuntimeError, Exception) as e:
 #                                                                            #
 ##############################################################################
 
-MSG_TYPE_SET = "set"
 MSG_TYPE_PRESENTATION = "presentation"
 
 CHILD_DEVICE_NODE = "node"
@@ -249,65 +250,13 @@ mqtt = MqttService(
 )
 
 
-LOG_FILE_NAME = "thermostat.log"
-
-LOG_ALWAYS_TIMESTAMP = True
-
-LOG_LEVEL_DEBUG = 1
-LOG_LEVEL_INFO = 2
-LOG_LEVEL_ERROR = 3
-LOG_LEVEL_STATE = 4
-LOG_LEVEL_NONE = 5
-
-LOG_LEVELS = {
-    "debug": LOG_LEVEL_DEBUG,
-    "info": LOG_LEVEL_INFO,
-    "state": LOG_LEVEL_STATE,
-    "error": LOG_LEVEL_ERROR
-}
-
-LOG_LEVELS_STR = {v: k for k, v in LOG_LEVELS.items()}
-
-logFile = None
-
-
-def log_dummy(level, child_device, msg_subtype, msg, msg_type=MSG_TYPE_SET, timestamp=True, single=False):
-    pass
-
-def log_mqtt(level, child_device, msg_subtype, msg, msg_type=MSG_TYPE_SET, timestamp=True, single=False):
-    if level >= logLevel:
-        ts = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z ") if LOG_ALWAYS_TIMESTAMP or timestamp else ""
-        topic = mqtt.log_topic(LOG_LEVELS_STR[level], child_device, msg_type, msg_subtype)
-        mqtt.publish(topic, ts + msg)
-
-def log_file(level, child_device, msg_subtype, msg, msg_type=MSG_TYPE_SET, timestamp=True, single=False):
-    if level >= logLevel:
-        ts = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z ")
-        logFile.write(
-            ts + LOG_LEVELS_STR[level] + "/" + child_device + "/" + msg_type + "/" + msg_subtype + ": " + msg + "\n")
-
-def log_print(level, child_device, msg_subtype, msg, msg_type=MSG_TYPE_SET, timestamp=True, single=False):
-    if level >= logLevel:
-        ts = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z ") if LOG_ALWAYS_TIMESTAMP or timestamp else ""
-        print(ts + LOG_LEVELS_STR[level] + "/" + child_device + "/" + msg_type + "/" + msg_subtype + ": " + msg)
-
-
-loggingChannel = cfg.get("logging", "channel")
-loggingLevel = cfg.get("logging", "level")
-
-if loggingChannel == 'none':
-    log = log_dummy
-elif loggingChannel == 'mqtt' and mqtt.enabled:
-    log = log_mqtt
-elif loggingChannel == 'file':
-    log = log_file
-    logFile = open(LOG_FILE_NAME, "a")
-elif loggingChannel == 'print':
-    log = log_print
-else:
-    log = log_dummy
-
-logLevel = LOG_LEVELS.get(loggingLevel, LOG_LEVEL_NONE)
+logger = Logger(
+    channel=cfg.get("logging", "channel"),
+    level_name=cfg.get("logging", "level"),
+    publish=mqtt.publish if mqtt.enabled else None,
+    log_topic=mqtt.log_topic,
+)
+log = logger.log
 
 
 log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_NAME, "Thermostat Starting Up...", msg_type=MSG_TYPE_PRESENTATION)
@@ -943,28 +892,19 @@ def restart(message):
     except Exception:
         pass
 
-    if logFile is not None:
-        try:
-            logFile.flush()
-            os.fsync(logFile.fileno())
-            logFile.close()
-        except Exception:
-            pass
+    logger.close()
 
     mqtt.stop()
 
     os.execl(sys.executable, 'python', __file__, *sys.argv[1:])  # does not return
 
 def setLogLevel(msg):
-    global logLevel
-
     payload = msg.payload
     if isinstance(payload, bytes):
         payload = payload.decode('utf-8')
     payload = payload.strip().lower()
 
-    if payload in LOG_LEVELS:
-        logLevel = LOG_LEVELS[payload]
+    if logger.set_level(payload):
         log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/loglevel",
             "LogLevel set to: " + payload)
     else:
@@ -1482,9 +1422,6 @@ if __name__ == '__main__':
         log(LOG_LEVEL_STATE, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/shutdown", "Thermostat Shutting Down...")
         GPIO.cleanup()
 
-        if logFile is not None:
-            logFile.flush()
-            os.fsync(logFile.fileno())
-            logFile.close()
+        logger.close()
 
         mqtt.stop()
