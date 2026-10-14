@@ -2,7 +2,7 @@
 
 # BEGIN LICENSE
 # Copyright (c) 2015 Andrzej Taramina <andrzej@chaeron.com>
-# Copyright (c) 2025-2026 Chris (ckvsoft) <chris@ckvsoft.at>
+# Copyright (c) 2023-2026 Chris (ckvsoft) <chris@ckvsoft.at>
 
 # Permission is hereby granted, free of charge, to any person
 # obtaining a copy of this software and associated documentation

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 #
-# Copyright (c) 2026 Chris (ckvsoft) <chris@ckvsoft.at>
+# Copyright (c) 2023-2026 Chris (ckvsoft) <chris@ckvsoft.at>
 # SPDX-License-Identifier: MIT
 
 """MQTT/utility commands: version, log level, restart and IP lookup."""
