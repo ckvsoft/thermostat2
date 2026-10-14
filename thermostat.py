@@ -52,6 +52,7 @@ from app_state import AppState
 from web import WebInterface
 from scheduler import Scheduler
 import ui
+from mqtt import MqttService
 
 try:
     from hotwater_control import HotWaterControl
@@ -127,13 +128,6 @@ except (ImportError, OSError, RuntimeError, Exception) as e:
 #                                                                            #
 ##############################################################################
 
-try:
-    import paho.mqtt.client as mqtt
-    import paho.mqtt.publish as publish
-
-    mqttAvailable = True
-except ImportError:
-    mqttAvailable = False
 
 
 ##############################################################################
@@ -240,72 +234,19 @@ hotwater_control = HotWaterControl(hotwater_settings) if hotwater_module_availab
 faikinEnabled = cfg.get("faikin", "enabled")
 faikinName = cfg.get("faikin", "name")
 
-def on_disconnect(client, userdata, disconnect_flags, reason_code, properties):
-    # paho-mqtt v2 / CallbackAPIVersion.VERSION2 signature
-    if reason_code != 0:
-        print(f"Unexpected MQTT Broker disconnection! {reason_code}")
-        log(LOG_LEVEL_INFO, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT,
-            f"Unexpected MQTT Broker disconnection: {reason_code}")
-
-def mqtt_on_connect(client, userdata, connect_flags, reason_code, properties):
-    # paho-mqtt v2 / CallbackAPIVersion.VERSION2 signature
-    global mqttReconnect
-
-    print("MQTT Connected with result code: " + str(reason_code))
-
-    if reason_code == 0:
-        if mqttReconnect:
-            log(LOG_LEVEL_STATE, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT,
-                "Reconnected to: " + mqttServer + ":" + str(mqttPort))
-        else:
-            mqttReconnect = True
-            log(LOG_LEVEL_STATE, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT,
-                "Connected to: " + mqttServer + ":" + str(mqttPort))
-
-        mqtt_subscriptions = [
-            (mqttSub_restart, 0),
-            (mqttSub_loglevel, 0),
-            (mqttSub_version, 0)
-        ]
-
-        if domestic_water_enabled:
-            mqtt_subscriptions.append((domestic_water_topic, 0))
-
-        if faikinEnabled:
-            mqtt_subscriptions.append((mqttSub_faikin, 0))
-
-        mqtt_subscriptions.append((mqttSub_state, 0))
-        src = client.subscribe(mqtt_subscriptions)
-
-        if src[0] == 0:
-            log(LOG_LEVEL_INFO, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT,
-                "Subscribe Succeeded: " + mqttServer + ":" + str(mqttPort))
-        else:
-            log(LOG_LEVEL_ERROR, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT,
-                "Subscribe FAILED, result code: " + str(src[0]))
+def _mqtt_log(level, msg):
+    lvl = {"state": LOG_LEVEL_STATE, "error": LOG_LEVEL_ERROR}.get(level, LOG_LEVEL_INFO)
+    log(lvl, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT, msg)
 
 
-if mqttAvailable:
-    mqttReconnect = False
-    mqttEnabled = cfg.get("mqtt", "enabled")
-    mqttClientID = cfg.get("mqtt", "clientID")
-    mqttServer = cfg.get("mqtt", "server")
-    mqttPort = cfg.get("mqtt", "port")
-    mqttPubPrefix = cfg.get("mqtt", "pubPrefix")
-
-    mqttSub_version = str(mqttPubPrefix + "/" + mqttClientID + "/command/version")
-    mqttSub_restart = str(mqttPubPrefix + "/" + mqttClientID + "/command/restart")
-    mqttSub_loglevel = str(mqttPubPrefix + "/" + mqttClientID + "/command/loglevel")
-    mqttSub_state = str(mqttPubPrefix + "/" + mqttClientID + "/command/state")
-    # Faikout publishes its status on state/<name>/status
-    # (not "Faikin/<name>"), otherwise outside_temp stays 0.0.
-    mqttSub_faikin = str("state/" + faikinName + "/status")
-
-    mqttPub_state = str(mqttPubPrefix + "/" + mqttClientID + "/state/status")
-    mqttPub_fanstate = str(mqttPubPrefix + "/" + mqttClientID + "/state/fan")
-
-else:
-    mqttEnabled = False
+mqtt = MqttService(
+    enabled=cfg.get("mqtt", "enabled"),
+    client_id=cfg.get("mqtt", "clientID"),
+    server=cfg.get("mqtt", "server"),
+    port=cfg.get("mqtt", "port"),
+    pub_prefix=cfg.get("mqtt", "pubPrefix"),
+    log=_mqtt_log,
+)
 
 
 LOG_FILE_NAME = "thermostat.log"
@@ -336,14 +277,8 @@ def log_dummy(level, child_device, msg_subtype, msg, msg_type=MSG_TYPE_SET, time
 def log_mqtt(level, child_device, msg_subtype, msg, msg_type=MSG_TYPE_SET, timestamp=True, single=False):
     if level >= logLevel:
         ts = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z ") if LOG_ALWAYS_TIMESTAMP or timestamp else ""
-        topic = mqttPubPrefix + "/sensor/log/" + LOG_LEVELS_STR[
-            level] + "/" + mqttClientID + "/" + child_device + "/" + msg_type + "/" + msg_subtype
-        payload = ts + msg
-
-        if single:
-            publish.single(topic, payload, hostname=mqttServer, port=mqttPort, client_id=mqttClientID)
-        else:
-            mqttc.publish(topic, payload)
+        topic = mqtt.log_topic(LOG_LEVELS_STR[level], child_device, msg_type, msg_subtype)
+        mqtt.publish(topic, ts + msg)
 
 def log_file(level, child_device, msg_subtype, msg, msg_type=MSG_TYPE_SET, timestamp=True, single=False):
     if level >= logLevel:
@@ -362,7 +297,7 @@ loggingLevel = cfg.get("logging", "level")
 
 if loggingChannel == 'none':
     log = log_dummy
-elif loggingChannel == 'mqtt' and mqttEnabled:
+elif loggingChannel == 'mqtt' and mqtt.enabled:
     log = log_mqtt
 elif loggingChannel == 'file':
     log = log_file
@@ -810,7 +745,7 @@ def change_system_settings():
         if fpin_start != str(GPIO.input(fanPin)):
             log(LOG_LEVEL_STATE, CHILD_DEVICE_FAN, MSG_SUBTYPE_BINARY_STATUS, "1" if GPIO.input(fanPin) else "0")
 
-        if mqttEnabled:
+        if mqtt.enabled:
             faikin.publish_control()
 
 
@@ -1016,11 +951,7 @@ def restart(message):
         except Exception:
             pass
 
-    if mqttEnabled:
-        try:
-            mqttc.disconnect()
-        except Exception:
-            pass
+    mqtt.stop()
 
     os.execl(sys.executable, 'python', __file__, *sys.argv[1:])  # does not return
 
@@ -1112,57 +1043,33 @@ def update_hotwater_ui(status):
     Clock.schedule_once(_apply, 0)
 
 def setMqttFanCommand(state):
-    if mqttEnabled:
-        mqttc.publish(mqttPub_fanstate, state)
+    if mqtt.enabled:
+        mqtt.publish(mqtt.state_topic("fan"), state)
 
-if mqttEnabled:
-    # paho-mqtt v2 requires CallbackAPIVersion; v1 does not know the argument
-    try:
-        mqttc = mqtt.Client(callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
-                            client_id=mqttClientID, protocol=mqtt.MQTTv5)
-    except (AttributeError, TypeError):
-        mqttc = mqtt.Client(client_id=mqttClientID, protocol=mqtt.MQTTv5)
-    mqttc.on_connect = mqtt_on_connect
-    mqttc.on_disconnect = on_disconnect
-
-    mqttc.message_callback_add(mqttSub_restart, lambda client, userdata, message: restart(message) )
-    mqttc.message_callback_add(mqttSub_loglevel, lambda client, userdata, message: setLogLevel(message))
-    mqttc.message_callback_add(mqttSub_version, lambda client, userdata, message: getVersion(message))
-    mqttc.message_callback_add(mqttSub_state, lambda client, userdata, message: get_status_info())
-    if domestic_water_enabled:
-        mqttc.message_callback_add(domestic_water_topic, lambda client, userdata, message: set_domestic_water(message))
-
+if mqtt.enabled:
     faikin = FaikinController(
         name=faikinName,
         enabled=faikinEnabled,
         summer_temp=cfg.get("faikin", "summer_temp"),
-        publish=mqttc.publish,
+        publish=mqtt.publish,
         get_snapshot=_get_faikin_snapshot,
-        state_topic=mqttPub_state,
+        state_topic=mqtt.state_topic("status"),
         heartbeat=FAIKIN_CONTROL_HEARTBEAT,
         log_debug=_faikin_log_debug,
         log_error=_faikin_log_error,
     )
 
+    mqtt.add_handler(mqtt.command_topic("restart"), lambda message: restart(message))
+    mqtt.add_handler(mqtt.command_topic("loglevel"), lambda message: setLogLevel(message))
+    mqtt.add_handler(mqtt.command_topic("version"), lambda message: getVersion(message))
+    mqtt.add_handler(mqtt.command_topic("state"), lambda message: get_status_info())
+    if domestic_water_enabled:
+        mqtt.add_handler(domestic_water_topic, lambda message: set_domestic_water(message))
     if faikinEnabled:
-        mqttc.message_callback_add(
-            mqttSub_faikin,
-            lambda client, userdata, message: faikin.handle_status_message(message))
+        mqtt.add_handler("state/" + faikinName + "/status",
+                         lambda message: faikin.handle_status_message(message))
 
-    # Make sure we can reach the mqtt server by pinging it (max 30s wait)
-    pingCount = 0
-    pingCmd = "ping -c 1 -W 1 " + mqttServer + " > /dev/null 2>&1"
-
-    while os.system(pingCmd) != 0 and pingCount < 30:
-        pingCount += 1
-        time.sleep(1)
-
-    try:
-        mqttc.connect(mqttServer, mqttPort, keepalive=60)
-        mqttc.loop_start()
-    except Exception as e:
-        log(LOG_LEVEL_ERROR, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT,
-            f"Initial MQTT connect failed: {e}")
+    mqtt.start()
 
 
 ##############################################################################
@@ -1580,6 +1487,4 @@ if __name__ == '__main__':
             os.fsync(logFile.fileno())
             logFile.close()
 
-        if mqttEnabled:
-            mqttc.loop_stop()
-            mqttc.disconnect()
+        mqtt.stop()
