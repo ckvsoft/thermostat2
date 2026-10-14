@@ -47,6 +47,7 @@ import uuid
 
 from faikin import FaikinController
 from config import Config
+from weather import build_urls, get_weather, get_cardinal_direction, get_precip_amount
 
 try:
     from hotwater_control import HotWaterControl
@@ -678,11 +679,7 @@ def _faikin_log_error(msg):
 
 weatherLocation = cfg.get("weather", "location")
 weatherAppKey = cfg.get("weather", "appkey")
-weatherURLBase = "http://api.openweathermap.org/data/2.5/"
-# weatherURLCurrent   = weatherURLBase + "weather?units=" + tempScale + "&q=" + weatherLocation + "&APPID=" + weatherAppKey
-# weatherURLForecast      = weatherURLBase + "forecast/daily?units=" + tempScale + "&q=" + weatherLocation + "&APPID=" + weatherAppKey
-weatherURLCurrent = weatherURLBase + "weather?units=" + tempScale + "&id=" + weatherLocation + "&APPID=" + weatherAppKey + "&lang=de"
-weatherURLForecast = weatherURLBase + "forecast/daily?units=" + tempScale + "&id=" + weatherLocation + "&APPID=" + weatherAppKey + "&lang=de"
+weatherURLCurrent, weatherURLForecast = build_urls(tempScale, weatherLocation, weatherAppKey)
 weatherURLTimeout = cfg.get("weather", "URLtimeout")
 
 weatherRefreshInterval = cfg.get("weather", "weatherRefreshInterval") * 60
@@ -728,20 +725,12 @@ forecastTomoCloudsValueLabel = Label(text="N/A", size_hint=(None, None), font_si
 forecastTomoRainLabel = Label(text="", size_hint=(None, None), font_size='15sp', markup=True, text_size=(100, 16), valign="top", halign='left')
 forecastTomoRainValueLabel = Label(text="", size_hint=(None, None), font_size='15sp', markup=True, text_size=(160, 16), valign="top", halign='left')
 
-def get_weather(url):
-    with urllib.request.urlopen(url, None, weatherURLTimeout) as response:
-        return json.loads(response.read())
-
-def get_cardinal_direction(heading):
-    directions = ["N", "NE", "E", "SE", "S", "SW", "W", "NW", "N"]
-    return directions[int(round(((heading % 360) / 45)))]
-
 def display_current_weather(dt):
     with weatherLock:
         interval = weatherRefreshInterval
 
         try:
-            weather = get_weather(weatherURLCurrent)
+            weather = get_weather(weatherURLCurrent, weatherURLTimeout)
 
             weatherImg.source = "web/images/" + weather["weather"][0]["icon"] + ".png"
 
@@ -772,20 +761,12 @@ def display_current_weather(dt):
         Clock.schedule_once(display_current_weather, interval)
 
 
-def get_precip_amount(raw):
-    precip = round(raw * precipFactor, precipRound)
-
-    if tempScale == "metric":
-        return str(int(precip))
-    else:
-        return str(precip)
-
 def display_forecast_weather(dt):
     with weatherLock:
         interval = forecastRefreshInterval
 
         try:
-            forecast = get_weather(weatherURLForecast)
+            forecast = get_weather(weatherURLForecast, weatherURLTimeout)
 
             today = forecast["list"][0]
             tomo = forecast["list"][1]
@@ -801,12 +782,12 @@ def display_forecast_weather(dt):
             if "rain" in today or "snow" in today:
                 if "rain" in today:
                     forecastTodayRainLabel.text = _("Rain") + ":"
-                    rainValueText = get_precip_amount(today["rain"]) + precipUnits
+                    rainValueText = get_precip_amount(today["rain"], precipFactor, precipRound, tempScale) + precipUnits
                     if "snow" in today:
-                        rainValueText += ", " + _("Snow") + ": " + get_precip_amount(today["snow"]) + precipUnits
+                        rainValueText += ", " + _("Snow") + ": " + get_precip_amount(today["snow"], precipFactor, precipRound, tempScale) + precipUnits
                 else:
                     forecastTodayRainLabel.text = _("Snow") + ":"
-                    rainValueText = get_precip_amount(today["snow"]) + precipUnits
+                    rainValueText = get_precip_amount(today["snow"], precipFactor, precipRound, tempScale) + precipUnits
 
             forecastTodayRainValueLabel.text = rainValueText
 
@@ -821,12 +802,12 @@ def display_forecast_weather(dt):
             if "rain" in tomo or "snow" in tomo:
                 if "rain" in tomo:
                     forecastTomoRainLabel.text = _("Rain") + ":"
-                    rainValueText = get_precip_amount(tomo["rain"]) + precipUnits
+                    rainValueText = get_precip_amount(tomo["rain"], precipFactor, precipRound, tempScale) + precipUnits
                     if "snow" in tomo:
-                        rainValueText += ", " + _("Snow") + ": " + get_precip_amount(tomo["snow"]) + precipUnits
+                        rainValueText += ", " + _("Snow") + ": " + get_precip_amount(tomo["snow"], precipFactor, precipRound, tempScale) + precipUnits
                 else:
                     forecastTomoRainLabel.text = _("Snow") + ":"
-                    rainValueText = get_precip_amount(tomo["snow"]) + precipUnits
+                    rainValueText = get_precip_amount(tomo["snow"], precipFactor, precipRound, tempScale) + precipUnits
 
             forecastTomoRainValueLabel.text = rainValueText
 
