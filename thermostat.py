@@ -41,9 +41,6 @@ import socket
 import sys
 import threading
 import time
-import traceback
-import urllib.request
-import uuid
 
 from faikin import FaikinController
 from config import Config
@@ -52,6 +49,7 @@ from app_state import AppState
 from web import WebInterface
 from scheduler import Scheduler
 import ui
+from controller import ThermostatController
 from mqtt import MqttService
 from logging_setup import (Logger, LOG_LEVEL_DEBUG, LOG_LEVEL_INFO,
                            LOG_LEVEL_ERROR, LOG_LEVEL_STATE, LOG_LEVEL_NONE)
@@ -281,7 +279,6 @@ TEMP_TOLERANCE = 0.1 if tempScale == "metric" else 0.18
 minFlowTemp = 65.0
 currentFlowTemp = 0.0
 
-priorCorrected = -100.0
 _saved = state.get("state") if state.exists("state") else {}
 app = AppState(
     current_temp=22.0 if tempScale == "metric" else 72.0,
@@ -291,7 +288,6 @@ app = AppState(
     fan=_saved.get("fanControl") == "down",
     hold=_saved.get("holdControl") == "down",
 )
-_last_persisted_state = None  # cache to avoid needless writes (spares the SD card)
 
 tempHysteresis = cfg.get("thermostat", "tempHysteresis")
 
@@ -416,29 +412,45 @@ log(LOG_LEVEL_INFO, CHILD_DEVICE_PIR, MSG_SUBTYPE_TRIPPED, str(pirPin), timestam
 #                                                                            #
 ##############################################################################
 
-def get_status_info():
-    with thermostatLock:
-        sched = "None"
+def _publish_faikin():
+    if mqtt.enabled:
+        faikin.publish_control()
 
-        if app.hold:
-            sched = _("Hold")
-        elif useTestSchedule:
-            sched = "Test"
-        elif app.heat:
-            sched = _("Heat")
-        elif app.cool:
-            sched = _("Cool")
 
-        status_info = {
-            'heat': f"[color=00ff00][b]" + _("On") + "[/b][/color]" if not GPIO.input(heatPin) else f"" + _("Off"),
-            'cool': f"[color=00ff00][b]" + _("On") + "[/b][/color]" if not GPIO.input(coolPin) else f"" + _("Off"),
-            'fan': f"[color=00ff00][b]" + _("On") + "[/b][/color]" if GPIO.input(fanPin) else f"" + _("Auto"),
-            'sched': sched
-        }
+def _reload_schedule():
+    scheduler.reload()
 
-        status_info_json = json.dumps(status_info)
 
-        return status_info_json
+controller = ThermostatController(
+    app=app,
+    ui=ui,
+    gpio=GPIO,
+    log=log,
+    mqtt=mqtt,
+    state_store=state,
+    lock=thermostatLock,
+    heat_pin=heatPin,
+    cool_pin=coolPin,
+    fan_pin=fanPin,
+    temp_hysteresis=tempHysteresis,
+    units=scaleUnits,
+    sensor=tempSensor,
+    sensor_unit=sensorUnits,
+    calibration={
+        "freezing_measured": freezingMeasured,
+        "reference_range": referenceRange,
+        "measured_range": measuredRange,
+        "freezing_point": freezingPoint,
+    },
+    tolerance=TEMP_TOLERANCE,
+    min_flow_temp=minFlowTemp,
+    current_flow_temp=currentFlowTemp,
+    use_test_schedule=useTestSchedule,
+    hotwater=hotwater_control,
+    publish_faikin=_publish_faikin,
+    reload_schedule=_reload_schedule,
+)
+
 
 def _ui_log_binary(control_label, value):
     log(LOG_LEVEL_STATE, control_label + CHILD_DEVICE_SUFFIX_UICONTROL, MSG_SUBTYPE_BINARY_STATUS, value)
@@ -446,7 +458,7 @@ def _ui_log_binary(control_label, value):
 
 ui.create(
     app=app,
-    status_provider=get_status_info,
+    status_provider=controller.get_status_info,
     min_temp=minTemp,
     max_temp=maxTemp,
     temp_step=tempStep,
@@ -621,154 +633,6 @@ def display_forecast_weather(dt):
 #       Thermostat Implementation                                            #
 #                                                                            #
 ##############################################################################
-
-
-def change_system_settings():
-    with thermostatLock:
-        global currentFlowTemp, minFlowTemp
-
-        hpin_start = str(GPIO.input(heatPin))
-        cpin_start = str(GPIO.input(coolPin))
-        fpin_start = str(GPIO.input(fanPin))
-
-        if app.heat:
-            GPIO.output(coolPin, GPIO.HIGH)
-
-            if app.set_temp >= app.current_temp + tempHysteresis:
-                GPIO.output(heatPin, GPIO.LOW)
-                GPIO.output(fanPin, GPIO.LOW)
-            elif app.set_temp <= app.current_temp:
-                GPIO.output(heatPin, GPIO.HIGH)
-                if not app.fan and GPIO.input(coolPin):
-                    GPIO.output(fanPin, GPIO.HIGH)
-        else:
-            GPIO.output(heatPin, GPIO.HIGH)
-
-            if app.cool:
-                if app.set_temp <= app.current_temp - tempHysteresis:
-                    GPIO.output(coolPin, GPIO.LOW)
-                    GPIO.output(fanPin, GPIO.LOW)
-                elif app.set_temp >= app.current_temp:
-                    GPIO.output(coolPin, GPIO.HIGH)
-                    if not app.fan and GPIO.input(heatPin):
-                        GPIO.output(fanPin, GPIO.LOW)
-            else:
-                GPIO.output(coolPin, GPIO.HIGH)
-                if not app.fan and GPIO.input(heatPin):
-                    GPIO.output(fanPin, GPIO.HIGH)
-
-        log(LOG_LEVEL_STATE, CHILD_DEVICE_TEMP, MSG_SUBTYPE_TEMPERATURE, "minFlow: " + str(minFlowTemp))
-        log(LOG_LEVEL_STATE, CHILD_DEVICE_TEMP, MSG_SUBTYPE_TEMPERATURE, "currentFlow: " + str(currentFlowTemp))
-
-        if app.fan:
-            GPIO.output(fanPin, GPIO.HIGH)
-            setMqttFanCommand("on")
-            log(LOG_LEVEL_STATE, CHILD_DEVICE_FAN, MSG_SUBTYPE_TEXT, "fan forced on")
-        else:
-            setMqttFanCommand("off")
-            if GPIO.input(heatPin) and GPIO.input(coolPin):
-                GPIO.output(fanPin, GPIO.LOW)
-                log(LOG_LEVEL_STATE, CHILD_DEVICE_FAN, MSG_SUBTYPE_TEXT, "fan off (idle)")
-
-        # persist state across restarts, only when changed (spares the SD card)
-        global _last_persisted_state
-        current_state = (app.set_temp, app.heat, app.cool, app.fan, app.hold)
-        if current_state != _last_persisted_state:
-            state.put("state", setTemp=app.set_temp,
-                      heatControl="down" if app.heat else "normal",
-                      coolControl="down" if app.cool else "normal",
-                      fanControl="down" if app.fan else "normal",
-                      holdControl="down" if app.hold else "normal")
-            _last_persisted_state = current_state
-
-        status_info = json.loads(get_status_info())
-        ui.statusHeatValueLabel.text = status_info['heat']
-        ui.statusCoolValueLabel.text = status_info['cool']
-        ui.statusFanValueLabel.text = status_info['fan']
-        ui.statusSchedValueLabel.text = status_info['sched']
-
-        if hpin_start != str(GPIO.input(heatPin)):
-            log(LOG_LEVEL_STATE, CHILD_DEVICE_HEAT, MSG_SUBTYPE_BINARY_STATUS, "1" if GPIO.input(heatPin) else "0")
-        if cpin_start != str(GPIO.input(coolPin)):
-            log(LOG_LEVEL_STATE, CHILD_DEVICE_COOL, MSG_SUBTYPE_BINARY_STATUS, "1" if GPIO.input(coolPin) else "0")
-        if fpin_start != str(GPIO.input(fanPin)):
-            log(LOG_LEVEL_STATE, CHILD_DEVICE_FAN, MSG_SUBTYPE_BINARY_STATUS, "1" if GPIO.input(fanPin) else "0")
-
-        if mqtt.enabled:
-            faikin.publish_control()
-
-
-def control_callback(control):
-    with thermostatLock:
-        ui.setControlState(control, control.state)
-
-        if control is ui.coolControl:
-            if control.state == "down":
-                ui.setControlState(ui.heatControl, "normal")
-                app.heat = False
-            app.cool = control.state == "down"
-            scheduler.reload()
-
-        if control is ui.heatControl:
-            if control.state == "down":
-                ui.setControlState(ui.coolControl, "normal")
-                app.cool = False
-            app.heat = control.state == "down"
-            scheduler.reload()
-
-        if control is ui.fanControl:
-            app.fan = control.state == "down"
-
-        if control is ui.holdControl:
-            app.hold = control.state == "down"
-
-
-
-def check_sensor_temp(dt):
-    with thermostatLock:
-        global priorCorrected
-        global tempSensor
-
-        if tempSensor is not None:
-            try:
-                rawTemp = tempSensor.get_temperature(sensorUnits)
-                correctedTemp = (((rawTemp - freezingMeasured) * referenceRange) / measuredRange) + freezingPoint
-                app.current_temp = round(correctedTemp, 1)
-                log(LOG_LEVEL_DEBUG, CHILD_DEVICE_TEMP, MSG_SUBTYPE_CUSTOM + "/raw", str(rawTemp))
-                log(LOG_LEVEL_DEBUG, CHILD_DEVICE_TEMP, MSG_SUBTYPE_CUSTOM + "/corrected", str(correctedTemp))
-
-                if abs(priorCorrected - correctedTemp) >= TEMP_TOLERANCE:
-                    log(LOG_LEVEL_STATE, CHILD_DEVICE_TEMP, MSG_SUBTYPE_TEMPERATURE, str(app.current_temp))
-                    priorCorrected = correctedTemp
-            except Exception as e:
-                log(LOG_LEVEL_ERROR, CHILD_DEVICE_TEMP, MSG_SUBTYPE_TEXT, f"Sensor read failed: {e}")
-
-        ui.currentLabel.text = "[b]" + str(app.current_temp) + scaleUnits + "[/b]"
-        ui.altCurLabel.text = ui.currentLabel.text
-
-        ui.dateLabel.text = "[b]" + time.strftime("%a %d. %b %Y") + "[/b]"
-
-        timeStr = time.strftime("%H:%M")
-
-        ui.timeLabel.text = ("[b]" + (timeStr if timeStr[0:1] != "0" else timeStr[1:]) + "[/b]").lower()
-        ui.altTimeLabel.text = ui.timeLabel.text
-
-        change_system_settings()
-
-        if hotwater_control is not None and hotwater_control.enabled:
-            try:
-                hotwater_control.update_water_temp(app.domestic_water)
-            except Exception as e:
-                log(LOG_LEVEL_ERROR, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT,
-                    f"hotwater control error: {e}")
-
-def update_set_temp(slider, value):
-    with thermostatLock:
-        priorTemp = app.set_temp
-        app.set_temp = round(slider.value, 1)
-        ui.setLabel.text = "  Set\n[b]" + str(app.set_temp) + scaleUnits + "[/b]"
-        if priorTemp != app.set_temp:
-            log(LOG_LEVEL_STATE, CHILD_DEVICE_UICONTROL_SLIDER, MSG_SUBTYPE_TEMPERATURE, str(app.set_temp))
 
 
 def check_pir(pin):
@@ -982,10 +846,6 @@ def update_hotwater_ui(status):
 
     Clock.schedule_once(_apply, 0)
 
-def setMqttFanCommand(state):
-    if mqtt.enabled:
-        mqtt.publish(mqtt.state_topic("fan"), state)
-
 if mqtt.enabled:
     faikin = FaikinController(
         name=faikinName,
@@ -1002,7 +862,7 @@ if mqtt.enabled:
     mqtt.add_handler(mqtt.command_topic("restart"), lambda message: restart(message))
     mqtt.add_handler(mqtt.command_topic("loglevel"), lambda message: setLogLevel(message))
     mqtt.add_handler(mqtt.command_topic("version"), lambda message: getVersion(message))
-    mqtt.add_handler(mqtt.command_topic("state"), lambda message: get_status_info())
+    mqtt.add_handler(mqtt.command_topic("state"), lambda message: controller.get_status_info())
     if domestic_water_enabled:
         mqtt.add_handler(domestic_water_topic, lambda message: set_domestic_water(message))
     if faikinEnabled:
@@ -1057,12 +917,12 @@ class ThermostatApp(App):
 
         wimg.bind(on_touch_down=show_reboot_dialog)
 
-        ui.coolControl.bind(on_press=control_callback)
-        ui.heatControl.bind(on_press=control_callback)
-        ui.fanControl.bind(on_press=control_callback)
-        ui.holdControl.bind(on_press=control_callback)
+        ui.coolControl.bind(on_press=controller.control_callback)
+        ui.heatControl.bind(on_press=controller.control_callback)
+        ui.fanControl.bind(on_press=controller.control_callback)
+        ui.holdControl.bind(on_press=controller.control_callback)
 
-        ui.tempSlider.bind(on_touch_down=update_set_temp, on_touch_move=update_set_temp)
+        ui.tempSlider.bind(on_touch_down=controller.update_set_temp, on_touch_move=controller.update_set_temp)
 
 
         wimg.size = (80, 80)
@@ -1266,7 +1126,7 @@ class ThermostatApp(App):
             if pirEnabled:
                 Clock.schedule_interval(check_pir, pirCheckInterval)
 
-        Clock.schedule_interval(check_sensor_temp, tempCheckInterval)
+        Clock.schedule_interval(controller.check_sensor_temp, tempCheckInterval)
 
         if hotwater_control is not None and hotwater_control.enabled:
             hotwater_control.set_ui_callback(update_hotwater_ui)
@@ -1283,23 +1143,6 @@ class ThermostatApp(App):
 #       Web Server Interface                                                 #
 #                                                                            #
 ##############################################################################
-
-def apply_set_temp(new_temp):
-    app.set_temp = new_temp
-    ui.setLabel.text = "  Set\n[b]" + str(app.set_temp) + scaleUnits + "[/b]"
-    ui.tempSlider.value = app.set_temp
-
-
-def apply_controls(heat, cool, fan, hold):
-    ui.setControlState(ui.heatControl, "down" if heat else "normal")
-    ui.setControlState(ui.coolControl, "down" if cool else "normal")
-    ui.setControlState(ui.fanControl, "down" if fan else "normal")
-    ui.setControlState(ui.holdControl, "down" if hold else "normal")
-    app.heat = bool(heat)
-    app.cool = bool(cool)
-    app.fan = bool(fan)
-    app.hold = bool(hold)
-
 
 def _web_log_info(subtype, msg):
     log(LOG_LEVEL_INFO, CHILD_DEVICE_WEBSERVER, subtype, msg)
@@ -1325,7 +1168,7 @@ class _SchedulerLog(object):
 
 scheduler = Scheduler(
     app=app,
-    apply_set_temp=apply_set_temp,
+    apply_set_temp=controller.apply_set_temp,
     temp_scale=tempScale,
     units=scaleUnits,
     use_test_schedule=useTestSchedule,
@@ -1381,9 +1224,9 @@ def startWebServer():
 
     cherrypy.quickstart(WebInterface(
         app=app,
-        status_provider=get_status_info,
-        set_setpoint=apply_set_temp,
-        set_controls=apply_controls,
+        status_provider=controller.get_status_info,
+        set_setpoint=controller.apply_set_temp,
+        set_controls=controller.apply_controls,
         reload_schedule=scheduler.reload,
         version=THERMOSTAT_VERSION,
         min_temp=minTemp,
