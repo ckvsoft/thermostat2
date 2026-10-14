@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+#
+# Copyright (c) 2026 Chris (ckvsoft) <chris@ckvsoft.at>
+# SPDX-License-Identifier: MIT
 
 """Daikin AC control via a Faikout/Faikin MQTT module.
 

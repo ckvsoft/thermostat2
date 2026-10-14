@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+#
+# Copyright (c) 2026 Chris (ckvsoft) <chris@ckvsoft.at>
+# SPDX-License-Identifier: MIT
 
 """Thermostat control loop: sensor reading, heating/cooling relays and
 the UI/status updates that go with them."""

@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+#
+# Copyright (c) 2026 Chris (ckvsoft) <chris@ckvsoft.at>
+# SPDX-License-Identifier: MIT
 
 """Kivy app shell: builds the thermostat layout and wires the widgets
 to the controller/handlers. `ui.py` provides the widgets themselves."""

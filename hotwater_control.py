@@ -1,5 +1,8 @@
 #  -*- coding: utf-8 -*-
 #
+# Copyright (c) 2026 Chris (ckvsoft) <chris@ckvsoft.at>
+# SPDX-License-Identifier: MIT
+#
 #  HotWaterControl - controls a Shelly smart plug that feeds a water
 #  heater (Warmwasser-Heizstab) based on SEUSS spot-market price data
 #  and the domestic water temperature.

@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+#
+# Copyright (c) 2026 Chris (ckvsoft) <chris@ckvsoft.at>
+# SPDX-License-Identifier: MIT
 
 """Peripheral MQTT/sensor handlers: domestic water, PIR/motion, the
 sleep screen and the hot-water sleep-screen labels."""

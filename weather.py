@@ -1,4 +1,7 @@
 # -*- coding: utf-8 -*-
+#
+# Copyright (c) 2026 Chris (ckvsoft) <chris@ckvsoft.at>
+# SPDX-License-Identifier: MIT
 
 """OpenWeatherMap helpers (URL building, fetching, formatting) and the
 periodic WeatherView that renders them into the UI."""

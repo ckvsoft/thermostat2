@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Chris (ckvsoft) <chris@ckvsoft.at>
+# SPDX-License-Identifier: MIT
+
 import time
 
 class HysteresisTimer:
