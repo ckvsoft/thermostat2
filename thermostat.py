@@ -209,6 +209,10 @@ debug = False
 useTestSchedule = False
 prevTemp = None
 prevTargetTemp = None
+prevFaikinMode = None
+prevFaikinPower = None
+last_faikin_control_time = 0.0
+FAIKIN_CONTROL_HEARTBEAT = 60  # s: Steuerbefehl regelmäßig wiederholen
 fan_hysteresis_timer = HysteresisTimer(interval=10)
 
 Window.show_cursor = False
@@ -302,7 +306,9 @@ if mqttAvailable:
     mqttSub_restart = str(mqttPubPrefix + "/" + mqttClientID + "/command/restart")
     mqttSub_loglevel = str(mqttPubPrefix + "/" + mqttClientID + "/command/loglevel")
     mqttSub_state = str(mqttPubPrefix + "/" + mqttClientID + "/command/state")
-    mqttSub_faikin = str("Faikin/" + faikinName)
+    # Faikout/Faikin meldet seinen Status unter state/<name>/status
+    # (nicht "Faikin/<name>") — sonst bleibt outside_temp dauerhaft 0.0.
+    mqttSub_faikin = str("state/" + faikinName + "/status")
 
     mqttPub_state = str(mqttPubPrefix + "/" + mqttClientID + "/state/status")
     mqttPub_fanstate = str(mqttPubPrefix + "/" + mqttClientID + "/state/fan")
@@ -737,7 +743,8 @@ def get_state_json():
     return data
 
 def publish_faikin_mqtt_message():
-    global prevTemp, prevTargetTemp
+    global prevTemp, prevTargetTemp, prevFaikinMode, prevFaikinPower
+    global last_faikin_control_time
 
     # Snapshot des aktuellen Wertes — schützt gegen Änderung während der Funktion
     cur_temp = currentTemp
@@ -758,23 +765,13 @@ def publish_faikin_mqtt_message():
         tolerance = 0.2       # Erlaubte Temperaturschwankung
         fan_hysteresis = 0.5  # Verhindert zu schnelle Lüfteränderungen
 
-        # Falls prevTemp oder cur_temp None ist, Initialisierung
+        # Ohne gültige aktuelle Temperatur kann keine Regelung stattfinden
         if cur_temp is None:
-            return  # Ohne gültige aktuelle Temperatur kann keine Regelung stattfinden
+            return
         if prevTemp is None:
             prevTemp = cur_temp
 
         delta_temp = cur_temp - prevTemp
-
-        # Zieltemperatur-Änderung hat immer Vorrang
-        if prevTargetTemp is None or prevTargetTemp != targettemp:
-            prevTargetTemp = targettemp
-            fan_hysteresis_timer.last_trigger_time = 0
-        # Kleine Temperaturschwankungen → Keine Regeländerung
-        elif abs(delta_temp) < tolerance:
-            mqtt_topic = f"command/{faikinName}/control"
-            mqttc.publish(mqtt_topic, payload)
-            return  # MQTT-Message bleibt gleich, aber keine Steuerungsänderung
 
         # Regelung bei zu großer Abweichung
         if (mode == "H" and tempSlider.value + 4.0 < rounded_temp) or \
@@ -807,17 +804,41 @@ def publish_faikin_mqtt_message():
                 fan = "1" if abs(temp_diff) > 2 else "2"
                 demand = 30 if abs(temp_diff) > 2 else 50
 
-        data = {
-            "env": cur_temp,
-            "temp": targettemp,
-            "powerful": powerful,
-            "power": power,
-            "mode": mode,
-            "fan": fan,
-            "demand": demand,
-        }
-        mqtt_topic = f"command/{faikinName}/control"
-        mqttc.publish(mqtt_topic, json.dumps(data))
+        # Steuerbefehl nur bei relevanter Änderung oder als Heartbeat senden.
+        # WICHTIG: Auf das control-Topic gehört ein gültiger Steuerbefehl mit
+        # "power"/"temp"/"mode"/"fan"/"demand". Vorher wurde hier bei stabiler
+        # Temperatur die State-JSON gesendet — die Faikout-Firmware ignoriert
+        # sie (kein "power"), wodurch die Daikin nie einschaltete.
+        now = time.time()
+        control_changed = (
+            prevTargetTemp is None
+            or prevTargetTemp != targettemp
+            or prevFaikinMode != mode
+            or prevFaikinPower != power
+        )
+
+        if control_changed or abs(delta_temp) >= tolerance \
+                or (now - last_faikin_control_time) >= FAIKIN_CONTROL_HEARTBEAT:
+            data = {
+                "env": cur_temp,
+                "temp": targettemp,
+                "powerful": powerful,
+                "power": power,
+                "mode": mode,
+                "fan": fan,
+                "demand": demand,
+            }
+            mqtt_topic = f"command/{faikinName}/control"
+            mqttc.publish(mqtt_topic, json.dumps(data))
+            last_faikin_control_time = now
+
+            log(LOG_LEVEL_DEBUG, CHILD_DEVICE_FAIKIN,
+                MSG_SUBTYPE_FAIKIN + "/" + faikinName,
+                "control " + json.dumps(data))
+
+        prevTargetTemp = targettemp
+        prevFaikinMode = mode
+        prevFaikinPower = power
 
     except Exception as e:
         error_trace = traceback.format_exc()
