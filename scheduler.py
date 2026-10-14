@@ -36,6 +36,11 @@ class Scheduler(object):
                 self._log.state("temperature", str(self.app.set_temp))
 
     def reload(self):
+        # Global lock order: schedule_lock BEFORE thermostat_lock. Callers
+        # must never invoke reload() while holding thermostat_lock, or the
+        # order inverts and deadlocks against the scheduler thread
+        # (run_forever holds schedule_lock and then takes thermostat_lock
+        # through set_scheduled_temp).
         with self._schedule_lock:
             schedule.clear()
             active_sched = None

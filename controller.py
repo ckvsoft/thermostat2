@@ -9,8 +9,8 @@ the UI/status updates that go with them."""
 import json
 import time
 
-from logging_setup import (LOG_LEVEL_DEBUG, LOG_LEVEL_INFO,
-                           LOG_LEVEL_ERROR, LOG_LEVEL_STATE)
+from logging_setup import (LOG_LEVEL_DEBUG, LOG_LEVEL_ERROR,
+                           LOG_LEVEL_STATE)
 
 CHILD_DEVICE_TEMP = "temperatureSensor"
 CHILD_DEVICE_HEAT = "heat"
@@ -70,9 +70,9 @@ class ThermostatController(object):
                 sched = _("Cool")
 
             status_info = {
-                'heat': f"[color=00ff00][b]" + _("On") + "[/b][/color]" if not gpio.input(self.heat_pin) else f"" + _("Off"),
-                'cool': f"[color=00ff00][b]" + _("On") + "[/b][/color]" if not gpio.input(self.cool_pin) else f"" + _("Off"),
-                'fan': f"[color=00ff00][b]" + _("On") + "[/b][/color]" if gpio.input(self.fan_pin) else f"" + _("Auto"),
+                'heat': ("[color=00ff00][b]" + _("On") + "[/b][/color]") if not gpio.input(self.heat_pin) else _("Off"),
+                'cool': ("[color=00ff00][b]" + _("On") + "[/b][/color]") if not gpio.input(self.cool_pin) else _("Off"),
+                'fan': ("[color=00ff00][b]" + _("On") + "[/b][/color]") if gpio.input(self.fan_pin) else _("Auto"),
                 'sched': sched
             }
 
@@ -162,20 +162,25 @@ class ThermostatController(object):
                     ui.setControlState(ui.heatControl, "normal")
                     app.heat = False
                 app.cool = control.state == "down"
-                self._reload_schedule()
 
             if control is ui.heatControl:
                 if control.state == "down":
                     ui.setControlState(ui.coolControl, "normal")
                     app.cool = False
                 app.heat = control.state == "down"
-                self._reload_schedule()
 
             if control is ui.fanControl:
                 app.fan = control.state == "down"
 
             if control is ui.holdControl:
                 app.hold = control.state == "down"
+
+        # reload() takes the schedule lock and, inside it, the thermostat
+        # lock. Calling it while holding the thermostat lock would invert
+        # the global lock order and deadlock against the scheduler thread,
+        # so it runs after the lock is released (see scheduler.py reload).
+        if control is ui.coolControl or control is ui.heatControl:
+            self._reload_schedule()
 
     def check_sensor_temp(self, dt):
         app = self.app

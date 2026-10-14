@@ -10,6 +10,7 @@ widgets nor global thermostat state directly.
 """
 
 import json
+import os
 import time
 
 import cherrypy
@@ -119,7 +120,6 @@ class WebInterface(object):
             if temp_changed:
                 self._log_state("temperature", str(new_temp))
             self._set_controls(heat == "on", cool == "on", fan == "on", hold == "on")
-            self._reload_schedule()
 
             def highlight(val, active):
                 return ('<font color="red"><b>' + str(val) + '</b></font>') if active else str(val)
@@ -134,6 +134,10 @@ class WebInterface(object):
                 "@@hold@@": highlight(hold, hold == "on"),
             }
 
+        # Outside the thermostat lock: reload() takes the schedule lock and
+        # then the thermostat lock, so holding our lock here would deadlock
+        # against the scheduler thread (see scheduler.py reload).
+        self._reload_schedule()
         return self._render("web/html/thermostat_set.html", replacements)
 
     @cherrypy.expose
@@ -158,8 +162,12 @@ class WebInterface(object):
         sched_data = cherrypy.request.json
 
         with self._schedule_lock:
-            with open("thermostat_schedule.json", "w") as f:
+            # write to a temp file and rename, so a crash mid-write can
+            # never leave a truncated/corrupt schedule behind
+            tmp = "thermostat_schedule.json.tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
                 f.write(json.dumps(sched_data, indent=4))
+            os.replace(tmp, "thermostat_schedule.json")
 
         self._reload_schedule()
 
