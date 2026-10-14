@@ -50,6 +50,7 @@ from web import WebInterface
 from scheduler import Scheduler
 import ui
 from controller import ThermostatController
+from handlers import Handlers, MinimalScreen
 from mqtt import MqttService
 from logging_setup import (Logger, LOG_LEVEL_DEBUG, LOG_LEVEL_INFO,
                            LOG_LEVEL_ERROR, LOG_LEVEL_STATE, LOG_LEVEL_NONE)
@@ -224,7 +225,6 @@ domestic_water_enabled = cfg.get("domestic_water", "enabled")
 domestic_water_topic = cfg.get("domestic_water", "topic")
 domestic_key_value_pair = cfg.get("domestic_water", "key_value_pair")
 domestic_timeout_duration = 300 # 5 min
-domestic_last_message_time = time.time()
 
 # Hot water (immersion heater on Shelly smart plug) control via SEUSS price data
 hotwater_settings = cfg.section("hotwater_control")
@@ -295,7 +295,6 @@ tempCheckInterval = cfg.get("thermostat", "tempCheckInterval")
 
 minUIEnabled = cfg.get("thermostat", "minUIEnabled")
 minUITimeout = cfg.get("thermostat", "minUITimeout")
-minUITimer = None
 blackScreenTimer = None
 
 log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/temperature/tempScale", str(tempScale),
@@ -449,6 +448,25 @@ controller = ThermostatController(
     hotwater=hotwater_control,
     publish_faikin=_publish_faikin,
     reload_schedule=_reload_schedule,
+)
+
+
+handlers = Handlers(
+    app=app,
+    ui=ui,
+    gpio=GPIO,
+    log=log,
+    lock=thermostatLock,
+    hotwater=hotwater_control,
+    units=scaleUnits,
+    domestic_key=domestic_key_value_pair,
+    domestic_timeout=domestic_timeout_duration,
+    pir_pin=pirPin,
+    pir_ignore_from=pirIgnoreFrom,
+    pir_ignore_to=pirIgnoreTo,
+    min_ui_timeout=minUITimeout,
+    get_price_bars=lambda: priceBarsWidget,
+    get_screen_mgr=lambda: screenMgr,
 )
 
 
@@ -635,84 +653,6 @@ def display_forecast_weather(dt):
 ##############################################################################
 
 
-def check_pir(pin):
-    global minUITimer
-
-    with thermostatLock:
-        if GPIO.input(pirPin):
-            log(LOG_LEVEL_INFO, CHILD_DEVICE_PIR, MSG_SUBTYPE_TRIPPED, "1")
-
-            if minUITimer is not None:
-                Clock.unschedule(show_minimal_ui)
-
-            minUITimer = Clock.schedule_once(show_minimal_ui, minUITimeout)
-
-            ignore = False
-            now = datetime.datetime.now().time()
-
-            if pirIgnoreFrom > pirIgnoreTo:
-                if now >= pirIgnoreFrom or now < pirIgnoreTo:
-                    ignore = True
-            else:
-                if pirIgnoreFrom <= now < pirIgnoreTo:
-                    ignore = True
-
-            if screenMgr.current == "minimalUI" and not (ignore):
-                screenMgr.current = "thermostatUI"
-                log(LOG_LEVEL_DEBUG, CHILD_DEVICE_SCREEN, MSG_SUBTYPE_TEXT, "Full")
-
-        else:
-            log(LOG_LEVEL_DEBUG, CHILD_DEVICE_PIR, MSG_SUBTYPE_TRIPPED, "0")
-
-
-
-def show_minimal_ui(dt):
-    with thermostatLock:
-        screenMgr.current = "minimalUI"
-        log(LOG_LEVEL_DEBUG, CHILD_DEVICE_SCREEN, MSG_SUBTYPE_TEXT, "Minimal")
-
-class MinimalScreen(Screen):
-    def _long_press_triggered(self, dt):
-        """Fires after 2s of holding the sleep screen without release."""
-        self._lp_done = True
-        with thermostatLock:
-            if hotwater_control is not None and hotwater_control.enabled:
-                try:
-                    hotwater_control.force_on()
-                except Exception:
-                    pass
-        log(LOG_LEVEL_DEBUG, CHILD_DEVICE_SCREEN, MSG_SUBTYPE_TEXT,
-            "Long press: hotwater override")
-
-    def on_touch_down(self, touch):
-        if self.collide_point(*touch.pos):
-            touch.grab(self)
-            self._down_time = time.time()
-            self._lp_done = False
-            self._lp_event = Clock.schedule_once(self._long_press_triggered, 2.0)
-            return True
-
-    def on_touch_up(self, touch):
-        global minUITimer
-
-        if touch.grab_current is self:
-            touch.ungrab(self)
-            if getattr(self, "_lp_event", None) is not None:
-                self._lp_event.cancel()
-                self._lp_event = None
-            with thermostatLock:
-                if minUITimer is not None:
-                    Clock.unschedule(show_minimal_ui)
-                minUITimer = Clock.schedule_once(show_minimal_ui, minUITimeout)
-                if self._lp_done:
-                    # Long press already handled the override -> stay asleep
-                    pass
-                else:
-                    self.manager.current = "thermostatUI"
-                    log(LOG_LEVEL_DEBUG, CHILD_DEVICE_SCREEN, MSG_SUBTYPE_TEXT, "Full")
-            return True
-
-
 ##############################################################################
 #                                                                            #
 #       Utility Functions                                                    #
@@ -775,77 +715,6 @@ def setLogLevel(msg):
         log(LOG_LEVEL_ERROR, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/loglevel",
             "Invalid LogLevel: " + payload)
 
-def set_domestic_water(message):
-    global domestic_key_value_pair
-    global domestic_last_message_time
-    try:
-        payload = message.payload
-        if isinstance(payload, bytes):
-            payload = payload.decode('utf-8')
-
-        data = json.loads(payload)
-        domestic_water_value = data.get(domestic_key_value_pair)
-        if domestic_water_value is not None and app.domestic_water != domestic_water_value:
-            app.domestic_water = domestic_water_value
-            ui.currentWaterValueLabel.text = "[b]" + str(app.domestic_water) + scaleUnits + "[/b]"
-            ui.altWaterValueLabel.text = "[b]" + str(app.domestic_water) + scaleUnits + "[/b]"
-            ui.altWaterValueLabel.color = (0.6, 0.6, 0.6, 0.55)
-
-        domestic_last_message_time = time.time()
-        Clock.schedule_once(check_domestic_water_timeout, domestic_timeout_duration)
-
-    except (json.JSONDecodeError, UnicodeDecodeError) as e:
-        log(LOG_LEVEL_ERROR, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT,
-            f"Invalid domestic_water payload: {e}")
-    except Exception as e:
-        log(LOG_LEVEL_ERROR, CHILD_DEVICE_MQTT, MSG_SUBTYPE_TEXT,
-            f"set_domestic_water error: {e}")
-
-def check_domestic_water_timeout(dt):
-    global domestic_last_message_time
-
-    current_time = time.time()
-    if current_time - domestic_last_message_time > domestic_timeout_duration:
-        app.domestic_water = "n/a"
-        ui.currentWaterValueLabel.text = "[b]" + str(app.domestic_water) + "[/b]"
-        ui.altWaterValueLabel.text = "[b]" + str(app.domestic_water) + "[/b]"
-        ui.altWaterValueLabel.color = (0.6, 0.6, 0.6, 0.55)
-
-def update_hotwater_ui(status):
-    """Update the sleep-mode labels from the HotWaterControl status.
-    Runs on the Kivy UI thread via Clock.schedule_once because the
-    status can arrive from the HotWaterControl polling thread."""
-    def _apply(dt):
-        w = priceBarsWidget
-        if w is not None:
-            try:
-                w.update_bars(status)
-            except Exception:
-                pass
-        # battery line: SOC + charging/discharging/idle from
-        # SEUSS /api/battery (display only).
-        try:
-            soc = status.get("battery_soc_percent")
-            state = status.get("battery_state")
-            if soc is None or state is None:
-                ui.altBatteryValueLabel.text = "--"
-                ui.altBatteryValueLabel.color = (0.45, 0.45, 0.45, 0.55)
-            else:
-                state_text = {"charging": "Ladung",
-                              "discharging": "Entladung"}.get(state, state)
-                ui.altBatteryValueLabel.text = \
-                    f"[b]{soc:.0f} %[/b] [size=20]({state_text})[/size]"
-                if state == "charging":
-                    ui.altBatteryValueLabel.color = (0.0, 0.55, 0.0, 0.85)
-                elif state == "discharging":
-                    ui.altBatteryValueLabel.color = (0.85, 0.3, 0.1, 0.85)
-                else:
-                    ui.altBatteryValueLabel.color = (0.6, 0.6, 0.6, 0.8)
-        except Exception:
-            pass
-
-    Clock.schedule_once(_apply, 0)
-
 if mqtt.enabled:
     faikin = FaikinController(
         name=faikinName,
@@ -864,7 +733,7 @@ if mqtt.enabled:
     mqtt.add_handler(mqtt.command_topic("version"), lambda message: getVersion(message))
     mqtt.add_handler(mqtt.command_topic("state"), lambda message: controller.get_status_info())
     if domestic_water_enabled:
-        mqtt.add_handler(domestic_water_topic, lambda message: set_domestic_water(message))
+        mqtt.add_handler(domestic_water_topic, lambda message: handlers.set_domestic_water(message))
     if faikinEnabled:
         mqtt.add_handler("state/" + faikinName + "/status",
                          lambda message: faikin.handle_status_message(message))
@@ -1079,6 +948,7 @@ class ThermostatApp(App):
             uiScreen.add_widget(thermostatUI)
 
             minScreen = MinimalScreen(name="minimalUI")
+            minScreen.handlers = handlers
             minUI = FloatLayout(size=(800, 480))
 
             with minUI.canvas.before:
@@ -1121,15 +991,15 @@ class ThermostatApp(App):
 
             layout = screenMgr
 
-            minUITimer = Clock.schedule_once(show_minimal_ui, minUITimeout)
+            handlers.schedule_minimal_ui()
 
             if pirEnabled:
-                Clock.schedule_interval(check_pir, pirCheckInterval)
+                Clock.schedule_interval(handlers.check_pir, pirCheckInterval)
 
         Clock.schedule_interval(controller.check_sensor_temp, tempCheckInterval)
 
         if hotwater_control is not None and hotwater_control.enabled:
-            hotwater_control.set_ui_callback(update_hotwater_ui)
+            hotwater_control.set_ui_callback(handlers.update_hotwater_ui)
             hotwater_control.start()
 
         Clock.schedule_once(display_current_weather, 5)
