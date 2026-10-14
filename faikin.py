@@ -10,9 +10,12 @@ without Kivy or GPIO.
 """
 
 import json
+import time
 import traceback
 
 from hysteresistimer import HysteresisTimer
+
+TREND_WINDOW = 60.0  # s: room-temperature window used to detect "not sinking"
 
 
 class FaikinController(object):
@@ -38,6 +41,7 @@ class FaikinController(object):
         self.prev_target = None
         self.prev_fan = None
         self.fan_timer = HysteresisTimer(fan_interval)
+        self._hist = []
 
     def handle_status_message(self, message):
         try:
@@ -151,12 +155,24 @@ class FaikinController(object):
                 temp_diff = None
 
             if temp_diff is not None:
-                if temp_diff > 1.0:
-                    fan, demand = "1", 30
-                elif temp_diff > tolerance:
-                    fan, demand = "2", 30
+                # Room temperature ~TREND_WINDOW back, to tell "moving back
+                # towards the setpoint" from "stuck above/below it".
+                now = time.time()
+                self._hist.append((now, cur_temp))
+                while self._hist and now - self._hist[0][0] > TREND_WINDOW:
+                    self._hist.pop(0)
+                ref = self._hist[0][1]
+                if mode == "H":
+                    not_recovering = cur_temp >= ref - 0.05
+                else:
+                    not_recovering = cur_temp <= ref + 0.05
+
+                if temp_diff > tolerance:
+                    # demand is already at its floor (30); if the room does not
+                    # come back towards the setpoint, step the fan down to 1
+                    fan, demand = ("1", 30) if not_recovering else ("2", 30)
                 elif temp_diff >= -tolerance:
-                    fan, demand = "3", 70
+                    fan, demand = "2", 70
                 elif temp_diff >= -1.0:
                     fan, demand = "4", 95
                 else:
