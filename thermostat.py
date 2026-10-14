@@ -46,6 +46,7 @@ import urllib.request
 import uuid
 
 from faikin import FaikinController
+from config import Config
 
 try:
     from hotwater_control import HotWaterControl
@@ -214,26 +215,26 @@ thermostatLock = threading.RLock()
 weatherLock = threading.Lock()
 scheduleLock = threading.RLock()
 
-settings = JsonStore("thermostat_settings.json")
+cfg = Config()
 state = JsonStore("thermostat_state.json")
 
 # Internationalization (i18n)
-t_locale = 'de_DE.utf8' if not (settings.exists("i18n")) else settings.get("i18n")["locale"]
+t_locale = cfg.get("i18n", "locale")
 locale.setlocale(locale.LC_ALL, t_locale)
 gettext.install('thermostat', localedir='locales', names='gettext')
 
-domestic_water_enabled = False if not (settings.exists("domestic_water")) else settings.get("domestic_water")["enabled"]
-domestic_water_topic = '' if not (settings.exists("domestic_water")) else settings.get("domestic_water")["topic"]
-domestic_key_value_pair = '' if not (settings.exists("domestic_water")) else settings.get("domestic_water")["key_value_pair"]
+domestic_water_enabled = cfg.get("domestic_water", "enabled")
+domestic_water_topic = cfg.get("domestic_water", "topic")
+domestic_key_value_pair = cfg.get("domestic_water", "key_value_pair")
 domestic_timeout_duration = 300 # 5 min
 domestic_last_message_time = time.time()
 
 # Hot water (immersion heater on Shelly smart plug) control via SEUSS price data
-hotwater_settings = {} if not (settings.exists("hotwater_control")) else settings.get("hotwater_control")
+hotwater_settings = cfg.section("hotwater_control")
 hotwater_control = HotWaterControl(hotwater_settings) if hotwater_module_available else None
 
-faikinEnabled = 0 if not (settings.exists("faikin")) else settings.get("faikin")["enabled"]
-faikinName = 'GuestAC' if not (settings.exists("faikin")) else settings.get("faikin")["name"]
+faikinEnabled = cfg.get("faikin", "enabled")
+faikinName = cfg.get("faikin", "name")
 
 def on_disconnect(client, userdata, disconnect_flags, reason_code, properties):
     # paho-mqtt v2 / CallbackAPIVersion.VERSION2 signature
@@ -282,11 +283,11 @@ def mqtt_on_connect(client, userdata, connect_flags, reason_code, properties):
 
 if mqttAvailable:
     mqttReconnect = False
-    mqttEnabled = True if not (settings.exists("mqtt")) else settings.get("mqtt")["enabled"]
-    mqttClientID = 'thermostat1' if not (settings.exists("mqtt")) else settings.get("mqtt")["clientID"]
-    mqttServer = '127.0.0.1' if not (settings.exists("mqtt")) else settings.get("mqtt")["server"]
-    mqttPort = 1883 if not (settings.exists("mqtt")) else settings.get("mqtt")["port"]
-    mqttPubPrefix = "thermostat" if not (settings.exists("mqtt")) else settings.get("mqtt")["pubPrefix"]
+    mqttEnabled = cfg.get("mqtt", "enabled")
+    mqttClientID = cfg.get("mqtt", "clientID")
+    mqttServer = cfg.get("mqtt", "server")
+    mqttPort = cfg.get("mqtt", "port")
+    mqttPubPrefix = cfg.get("mqtt", "pubPrefix")
 
     mqttSub_version = str(mqttPubPrefix + "/" + mqttClientID + "/command/version")
     mqttSub_restart = str(mqttPubPrefix + "/" + mqttClientID + "/command/restart")
@@ -352,8 +353,8 @@ def log_print(level, child_device, msg_subtype, msg, msg_type=MSG_TYPE_SET, time
         print(ts + LOG_LEVELS_STR[level] + "/" + child_device + "/" + msg_type + "/" + msg_subtype + ": " + msg)
 
 
-loggingChannel = "none" if not (settings.exists("logging")) else settings.get("logging")["channel"]
-loggingLevel = "state" if not (settings.exists("logging")) else settings.get("logging")["level"]
+loggingChannel = cfg.get("logging", "channel")
+loggingLevel = cfg.get("logging", "level")
 
 if loggingChannel == 'none':
     log = log_dummy
@@ -378,7 +379,7 @@ for child in CHILD_DEVICES:
     if child != CHILD_DEVICE_NODE:
         log(LOG_LEVEL_STATE, child, child, "", msg_type=MSG_TYPE_PRESENTATION)
 
-tempScale = settings.get("scale")["tempScale"]
+tempScale = cfg.get("scale", "tempScale")
 scaleUnits = "c" if tempScale == "metric" else "f"
 precipUnits = " mm" if tempScale == "metric" else '"'
 precipFactor = 1.0 if tempScale == "metric" else 0.0393701
@@ -398,12 +399,12 @@ priorCorrected = -100.0
 setTemp = 22.0 if not (state.exists("state")) else state.get("state")["setTemp"]
 _last_persisted_state = None  # cache to avoid needless writes (spares the SD card)
 
-tempHysteresis = 0.5 if not (settings.exists("thermostat")) else settings.get("thermostat")["tempHysteresis"]
+tempHysteresis = cfg.get("thermostat", "tempHysteresis")
 
-tempCheckInterval = 3 if not (settings.exists("thermostat")) else settings.get("thermostat")["tempCheckInterval"]
+tempCheckInterval = cfg.get("thermostat", "tempCheckInterval")
 
-minUIEnabled = 0 if not (settings.exists("thermostat")) else settings.get("thermostat")["minUIEnabled"]
-minUITimeout = 3 if not (settings.exists("thermostat")) else settings.get("thermostat")["minUITimeout"]
+minUIEnabled = cfg.get("thermostat", "minUIEnabled")
+minUITimeout = cfg.get("thermostat", "minUITimeout")
 minUITimer = None
 blackScreenTimer = None
 
@@ -435,13 +436,13 @@ log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/temperatu
     timestamp=False)
 
 
-elevation = 0 if not (settings.exists("calibration")) else settings.get("calibration")["elevation"]
+elevation = cfg.get("calibration", "elevation")
 boilingPoint = (100.0 - 0.003353 * elevation) if tempScale == "metric" else (212.0 - 0.00184 * elevation)
 freezingPoint = 0.01 if tempScale == "metric" else 32.018
 referenceRange = boilingPoint - freezingPoint
 
-boilingMeasured = 100.0 if not (settings.exists("calibration")) else settings.get("calibration")["boilingMeasured"]
-freezingMeasured = 0.0 if not (settings.exists("calibration")) else settings.get("calibration")["freezingMeasured"]
+boilingMeasured = cfg.get("calibration", "boilingMeasured")
+freezingMeasured = cfg.get("calibration", "freezingMeasured")
 measuredRange = boilingMeasured - freezingMeasured
 
 log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/calibration/elevation", str(elevation),
@@ -460,9 +461,9 @@ log(LOG_LEVEL_DEBUG, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/calibrat
     timestamp=False)
 
 
-minTemp = 15.0 if not (settings.exists("thermostat")) else settings.get("thermostat")["minTemp"]
-maxTemp = 30.0 if not (settings.exists("thermostat")) else settings.get("thermostat")["maxTemp"]
-tempStep = 0.5 if not (settings.exists("thermostat")) else settings.get("thermostat")["tempStep"]
+minTemp = cfg.get("thermostat", "minTemp")
+maxTemp = cfg.get("thermostat", "maxTemp")
+tempStep = cfg.get("thermostat", "tempStep")
 
 log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/UISlider/minTemp", str(minTemp), timestamp=False)
 log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/UISlider/maxTemp", str(maxTemp), timestamp=False)
@@ -475,13 +476,13 @@ except Exception as e:
     log(LOG_LEVEL_ERROR, CHILD_DEVICE_TEMP, MSG_SUBTYPE_TEXT, f"Sensor init failed: {e}")
     tempSensor = None
 
-pirEnabled = 0 if not (settings.exists("pir")) else settings.get("pir")["pirEnabled"]
-pirPin = 5 if not (settings.exists("pir")) else settings.get("pir")["pirPin"]
+pirEnabled = cfg.get("pir", "pirEnabled")
+pirPin = cfg.get("pir", "pirPin")
 
-pirCheckInterval = 0.5 if not (settings.exists("pir")) else settings.get("pir")["pirCheckInterval"]
+pirCheckInterval = cfg.get("pir", "pirCheckInterval")
 
-pirIgnoreFromStr = "00:00" if not (settings.exists("pir")) else settings.get("pir")["pirIgnoreFrom"]
-pirIgnoreToStr = "00:00" if not (settings.exists("pir")) else settings.get("pir")["pirIgnoreTo"]
+pirIgnoreFromStr = cfg.get("pir", "pirIgnoreFrom")
+pirIgnoreToStr = cfg.get("pir", "pirIgnoreTo")
 
 pirIgnoreFrom = datetime.time(int(pirIgnoreFromStr.split(":")[0]), int(pirIgnoreFromStr.split(":")[1]))
 pirIgnoreTo = datetime.time(int(pirIgnoreToStr.split(":")[0]), int(pirIgnoreToStr.split(":")[1]))
@@ -495,9 +496,9 @@ log(LOG_LEVEL_INFO, CHILD_DEVICE_NODE, MSG_SUBTYPE_CUSTOM + "/settings/pir/ignor
     timestamp=False)
 
 
-coolPin = 18 if not (settings.exists("thermostat")) else settings.get("thermostat")["coolPin"]
-heatPin = 23 if not (settings.exists("thermostat")) else settings.get("thermostat")["heatPin"]
-fanPin = 25 if not (settings.exists("thermostat")) else settings.get("thermostat")["fanPin"]
+coolPin = cfg.get("thermostat", "coolPin")
+heatPin = cfg.get("thermostat", "heatPin")
+fanPin = cfg.get("thermostat", "fanPin")
 
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(coolPin, GPIO.OUT)
@@ -675,18 +676,18 @@ def _faikin_log_error(msg):
 #                                                                            #
 ##############################################################################
 
-weatherLocation = settings.get("weather")["location"]
-weatherAppKey = settings.get("weather")["appkey"]
+weatherLocation = cfg.get("weather", "location")
+weatherAppKey = cfg.get("weather", "appkey")
 weatherURLBase = "http://api.openweathermap.org/data/2.5/"
 # weatherURLCurrent   = weatherURLBase + "weather?units=" + tempScale + "&q=" + weatherLocation + "&APPID=" + weatherAppKey
 # weatherURLForecast      = weatherURLBase + "forecast/daily?units=" + tempScale + "&q=" + weatherLocation + "&APPID=" + weatherAppKey
 weatherURLCurrent = weatherURLBase + "weather?units=" + tempScale + "&id=" + weatherLocation + "&APPID=" + weatherAppKey + "&lang=de"
 weatherURLForecast = weatherURLBase + "forecast/daily?units=" + tempScale + "&id=" + weatherLocation + "&APPID=" + weatherAppKey + "&lang=de"
-weatherURLTimeout = settings.get("weather")["URLtimeout"]
+weatherURLTimeout = cfg.get("weather", "URLtimeout")
 
-weatherRefreshInterval = settings.get("weather")["weatherRefreshInterval"] * 60
-forecastRefreshInterval = settings.get("weather")["forecastRefreshInterval"] * 60
-weatherExceptionInterval = settings.get("weather")["weatherExceptionInterval"] * 60
+weatherRefreshInterval = cfg.get("weather", "weatherRefreshInterval") * 60
+forecastRefreshInterval = cfg.get("weather", "forecastRefreshInterval") * 60
+weatherExceptionInterval = cfg.get("weather", "weatherExceptionInterval") * 60
 
 weatherSummaryLabel = Label(text="", size_hint=(None, None), font_size='20sp', markup=True, text_size=(200, 20))
 weatherImg = Image(source="web/images/na.png", size_hint=(None, None))
@@ -1346,8 +1347,7 @@ if mqttEnabled:
     faikin = FaikinController(
         name=faikinName,
         enabled=faikinEnabled,
-        summer_temp=(14 if not (settings.exists("faikin"))
-                     else settings.get("faikin")["summer_temp"]),
+        summer_temp=cfg.get("faikin", "summer_temp"),
         publish=mqttc.publish,
         get_snapshot=_get_faikin_snapshot,
         state_topic=mqttPub_state,
@@ -1600,8 +1600,7 @@ class ThermostatApp(App):
 
             # battery line: per settings key "battery_line_pos": [x, y]
             # (thermostat_settings.json) tweakable without git roundtrips.
-            battery_pos = list(settings.get("battery_line_pos")) \
-                if settings.exists("battery_line_pos") else [35, 225]
+            battery_pos = list(cfg.value("battery_line_pos", [35, 225]))
             altBatteryLabel.pos = (battery_pos[0], battery_pos[1])
             altBatteryValueLabel.pos = (battery_pos[0] + 130, battery_pos[1] - 3)
 
@@ -1895,10 +1894,10 @@ class WebInterface(object):
 
 
 def startWebServer():
-    host = "discover" if not (settings.exists("web")) else settings.get("web")["host"]
+    host = cfg.get("web", "host")
     # when host = "discover", use the local IP address
     cherrypy.server.socket_host = host if host != "discover" else get_ip_address()
-    cherrypy.server.socket_port = 80 if not (settings.exists("web")) else settings.get("web")["port"]
+    cherrypy.server.socket_port = cfg.get("web", "port")
 
     log(LOG_LEVEL_STATE, CHILD_DEVICE_WEBSERVER, MSG_SUBTYPE_TEXT,
         "Starting on " + cherrypy.server.socket_host + ":" + str(cherrypy.server.socket_port))
