@@ -178,7 +178,16 @@ class PriceBarsWidget(Widget):
     def update_bars(self, status):
         today = status.get("prices_today") or {}
         colors = status.get("colors_today") or {}
-        cheap = bool(status.get("cheap_now", status.get("in_cheap_block")))
+        # "Strom günstig" follows the SEUSS charging bars, independent of
+        # the hot-water cheap_hours selection: green (cheap & charging)
+        # for the current hour -> cheap. Fallback to the SEUSS flag only
+        # when no hourly colors are available (SEUSS offline).
+        colors = {str(k): v for k, v in colors.items()}
+        if colors:
+            now_hour = int(time.strftime("%H"))
+            cheap = colors.get(str(now_hour)) == "green"
+        else:
+            cheap = bool(status.get("in_cheap_block"))
         self._redraw(today, colors, cheap, status)
 
     def _redraw(self, today, colors, cheap, status):

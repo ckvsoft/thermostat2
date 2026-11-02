@@ -144,6 +144,8 @@ Control logic:
 
 "cheap" is either the SEUSS charging block flag (`in_cheap_block`, default) or -- with `cheap_hours` > 0 -- the N cheapest hours of today, computed locally from the hourly price curve (analogous to `number_of_lowest_prices` for the SEUSS switches, but with an own count for the slow heating rod). The sleep screen price timeline always shows the SEUSS chart colors; only the heater decision uses the `cheap_hours` selection.
 
+The sleep screen decision label ("JA (Strom günstig)" / "NEIN (Strom teuer)") is never coupled to the hot-water setting: it follows the SEUSS charging bars, so it shows "günstig" exactly when the current hour is colored green in the timeline. Only when the SEUSS snapshot has no hourly colors (SEUSS offline) does it fall back to the SEUSS `in_cheap_block` flag.
+
 Minimum on/off times protect the heating element from short-cycling. When SEUSS is unreachable, heating only happens via the force window or the manual override.
 
 Example configuration in `thermostat_settings.json`:
